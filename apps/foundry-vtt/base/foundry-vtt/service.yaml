@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foundry-vtt
+spec:
+  selector:
+    app: foundry
+  ports:
+    - protocol: TCP
+      port: 30000
+  type: ClusterIP
+
+

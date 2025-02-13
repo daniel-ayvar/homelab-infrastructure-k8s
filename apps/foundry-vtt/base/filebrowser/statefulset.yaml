@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: filebrowser
+spec:
+  serviceName: "filebrowser"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: filebrowser
+  template:
+    metadata:
+      labels:
+        app: filebrowser
+    spec:
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+      containers:
+        - name: filebrowser
+          image: filebrowser/filebrowser:v2.27.0
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+            - name: FB_DATABASE
+              value: /data/database.db
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - mountPath: /srv
+              name: foundry-vtt-data
+              readOnly: false
+            - mountPath: /data
+              name: filebrowser-data
+      volumes:
+        - name: foundry-vtt-data
+          persistentVolumeClaim:
+            claimName: foundry-vtt-data
+  volumeClaimTemplates:
+    - metadata:
+        name: filebrowser-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 30Gi
+        storageClassName: csi-cephfs-sc

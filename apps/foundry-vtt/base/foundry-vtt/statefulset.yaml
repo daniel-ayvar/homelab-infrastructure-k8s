@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: foundry-vtt
+spec:
+  serviceName: "foundry-vtt"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: foundry-vtt
+  template:
+    metadata:
+      labels:
+        app: foundry-vtt
+    spec:
+      securityContext:
+        fsGroup: 1000
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+      containers:
+        - name: foundry
+          image: felddy/foundryvtt:release-12.331.0
+          env:
+            - name: FOUNDRY_UID
+              value: "1000"
+            - name: FOUNDRY_GID
+              value: "1000"
+            - name: FOUNDRY_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: foundry-vtt-secrets
+                  key: foundry-vtt-username
+            - name: FOUNDRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foundry-vtt-secrets
+                  key: foundry-vtt-password
+            - name: FOUNDRY_ADMIN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: foundry-vtt-secrets
+                  key: foundry-vtt-admin-key
+          ports:
+            - containerPort: 30000
+          volumeMounts:
+            - name: foundry-vtt-data
+              mountPath: /data
+              readOnly: false
+          securityContext:
+            runAsGroup: 1000
+            allowPrivilegeEscalation: true
+            runAsNonRoot: false
+      volumes:
+        - name: foundry-vtt-data
+          persistentVolumeClaim:
+            claimName: foundry-vtt-data
