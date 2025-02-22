@@ -55,7 +55,7 @@ spec:
               readOnly: false
           securityContext:
             runAsGroup: 1000
-            allowPrivilegeEscalation: true
+            allowPrivilegeEscalation: false
             runAsNonRoot: false
       volumes:
         - name: foundry-vtt-data

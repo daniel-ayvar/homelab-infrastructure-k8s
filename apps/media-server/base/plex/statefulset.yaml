@@ -1,0 +1,77 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: plex
+spec:
+  serviceName: "plex"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plex
+  template:
+    metadata:
+      labels:
+        app: plex
+    spec:
+      securityContext:
+        fsGroup: 1000
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+      containers:
+        - name: plex
+          image: plexinc/pms-docker
+          ports:
+            - containerPort: 32400
+              protocol: TCP
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+            - name: VERSION
+              value: "docker"
+            - name: PLEX_CLAIM
+              valueFrom:
+                secretKeyRef:
+                  name: plex-secrets
+                  key: plex-claim-id
+          volumeMounts:
+            - name: media-data
+              mountPath: /media
+            - name: plex-data
+              mountPath: /db
+              subPath: db
+            - name: plex-data
+              mountPath: /config
+              subPath: config
+          securityContext:
+            runAsGroup: 1000
+            allowPrivilegeEscalation: true
+            runAsNonRoot: false
+            privileged: true
+      volumes:
+        - name: media-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/media
+            readOnly: true
+  volumeClaimTemplates:
+  - metadata:
+      name: plex-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 15Gi
+      storageClassName: csi-rbd-sc
