@@ -54,24 +54,30 @@ spec:
             - name: plex-data
               mountPath: /config
               subPath: config
+            - name: dev-dri
+              mountPath: /dev/dri
+          resources:
+            limits:
+              gpu.intel.com/i915: "1"
           securityContext:
             runAsGroup: 1000
-            allowPrivilegeEscalation: true
-            runAsNonRoot: false
-            privileged: true
       volumes:
         - name: media-data
           nfs:
             server: 10.70.30.10
             path: /mnt/d8_hybrid_hdd_pool/media
             readOnly: true
+        - name: dev-dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
   volumeClaimTemplates:
-  - metadata:
-      name: plex-data
-    spec:
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 15Gi
-      storageClassName: csi-rbd-sc
+    - metadata:
+        name: plex-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 15Gi
+        storageClassName: csi-rbd-sc
