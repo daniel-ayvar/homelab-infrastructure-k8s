@@ -71,13 +71,6 @@ spec:
           hostPath:
             path: /dev/dri
             type: Directory
-  volumeClaimTemplates:
-    - metadata:
-        name: plex-data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 15Gi
-        storageClassName: csi-rbd-sc
+        - name: plex-data
+          persistentVolumeClaim:
+            claimName: plex-data

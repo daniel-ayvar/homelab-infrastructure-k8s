@@ -5,7 +5,7 @@ resources:
   - externalsecret.yaml
   - service.yaml
   - statefulset.yaml
-  - job.yaml
+  - cronjob.yaml
   - pvc.yaml
   - role.yaml
   - rolebinding.yaml
