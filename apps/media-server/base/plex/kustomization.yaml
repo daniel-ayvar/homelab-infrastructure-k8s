@@ -5,6 +5,11 @@ resources:
   - externalsecret.yaml
   - service.yaml
   - statefulset.yaml
+  - job.yaml
+  - pvc.yaml
+  - role.yaml
+  - rolebinding.yaml
+  - serviceaccount.yaml
 
 labels:
 - includeSelectors: true
