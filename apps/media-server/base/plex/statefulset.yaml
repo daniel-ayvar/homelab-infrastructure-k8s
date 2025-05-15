@@ -27,7 +27,7 @@ spec:
           tolerationSeconds: 300
       containers:
         - name: plex
-          image: plexinc/pms-docker
+          image: plexinc/pms-docker:latest
           ports:
             - containerPort: 32400
               protocol: TCP
