@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: radarr
+spec:
+  serviceName: radarr
+  replicas: 1
+  selector:
+    matchLabels:
+      app: radarr
+  template:
+    metadata:
+      labels:
+        app: radarr
+    spec:
+      containers:
+        - name: radarr
+          image: linuxserver/radarr
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+          volumeMounts:
+            - name: radarr-data
+              mountPath: /config
+              subPath: radarr-data
+            - name: media-data
+              mountPath: /movies
+              subPath: movies
+            - name: torrents-data
+              mountPath: /torrents/movies
+              subPath: movies
+          ports:
+            - containerPort: 7878
+      restartPolicy: Always
+      volumes:
+        - name: radarr-data
+          persistentVolumeClaim:
+            claimName: radarr-data-pvc
+        - name: media-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/media
+            readOnly: true
+        - name: torrents-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/torrents
