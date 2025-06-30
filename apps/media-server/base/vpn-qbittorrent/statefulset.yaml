@@ -45,7 +45,7 @@ spec:
             - name: FIREWALL_VPN_INPUT_PORTS
               value: "15140"
             - name: FIREWALL_INPUT_PORTS
-              value: "15140"
+              value: "15140,8080"
             - name: HEALTH_VPN_DURATION_INITIAL
               value: "340s"
           volumeMounts:
