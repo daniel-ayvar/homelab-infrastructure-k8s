@@ -1,0 +1,26 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vpn-qbittorrent
+spec:
+  selector:
+    app: vpn-qbittorrent
+  ports:
+    - name: tcp-8080
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: tcp-8888
+      protocol: TCP
+      port: 8888
+      targetPort: 8888
+    - name: tcp-8388
+      protocol: TCP
+      port: 8388
+      targetPort: 8388
+    - name: udp-8388
+      protocol: UDP
+      port: 8388
+      targetPort: 8388
+  type: ClusterIP

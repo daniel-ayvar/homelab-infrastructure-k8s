@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vpn-qbittorrent
+spec:
+  serviceName: "vpn-qbittorrent-headless"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vpn-qbittorrent
+  template:
+    metadata:
+      labels:
+        app: vpn-qbittorrent
+    spec:
+      containers:
+        - name: qbittorrent
+          image: linuxserver/qbittorrent
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              subPath: qbittorrent/config
+            - name: torrents
+              mountPath: /torrents
+          ports:
+            - containerPort: 8080
+        - name: gluetun
+          image: qmcgaw/gluetun:latest
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          env:
+            - name: VPN_SERVICE_PROVIDER
+              value: custom
+            - name: VPN_TYPE
+              value: wireguard
+            - name: FIREWALL_VPN_INPUT_PORTS
+              value: "15140"
+            - name: FIREWALL_INPUT_PORTS
+              value: "15140"
+            - name: HEALTH_VPN_DURATION_INITIAL
+              value: "340s"
+          volumeMounts:
+            - name: config
+              mountPath: gluetun/config
+            - name: secrets
+              mountPath: /gluetun/wireguard/wg0.conf
+              subPath: wg0.conf
+              readOnly: true
+          ports:
+            - containerPort: 8888
+              protocol: TCP
+            - containerPort: 8388
+      restartPolicy: Always
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: vpn-qbittorrent-data-pvc
+        - name: torrents
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/torrents
+        - name: secrets
+          secret:
+            secretName: vpn-qbittorrent-secrets

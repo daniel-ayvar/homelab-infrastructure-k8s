@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - plex
+  - vpn-qbittorrent
 
 labels:
 - includeSelectors: true
