@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prowlarr
+spec:
+  serviceName: prowlarr
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prowlarr
+  template:
+    metadata:
+      labels:
+        app: prowlarr
+    spec:
+      containers:
+        - name: prowlarr
+          image: linuxserver/prowlarr
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+          volumeMounts:
+            - name: prowler-data
+              mountPath: /config
+              subPath: config
+          ports:
+            - containerPort: 9696
+      restartPolicy: Always
+      volumes:
+        - name: prowler-data
+          persistentVolumeClaim:
+            claimName: prowler-data-pvc

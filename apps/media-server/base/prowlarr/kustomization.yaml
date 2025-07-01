@@ -2,12 +2,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - plex
-  - vpn-qbittorrent
-  - radarr
-  - prowlarr
+  - statefulset.yaml
+  - pvc.yaml
+  - service.yaml
 
 labels:
 - includeSelectors: true
   pairs:
-    app.kubernetes.io/component: "base"
+    app.kubernetes.io/name: "prowlarr"
