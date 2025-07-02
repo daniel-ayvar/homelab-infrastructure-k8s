@@ -44,7 +44,6 @@ spec:
           nfs:
             server: 10.70.30.10
             path: /mnt/d8_hybrid_hdd_pool/media
-            readOnly: true
         - name: torrents-data
           nfs:
             server: 10.70.30.10
