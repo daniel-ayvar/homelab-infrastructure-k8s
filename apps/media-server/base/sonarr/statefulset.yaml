@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sonarr
+spec:
+  serviceName: sonarr
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarr
+  template:
+    metadata:
+      labels:
+        app: sonarr
+    spec:
+      containers:
+        - name: sonarr
+          image: linuxserver/sonarr
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+          volumeMounts:
+            - name: sonarr-data
+              mountPath: /config
+              subPath: sonarr-data
+            - name: media-data
+              mountPath: /tv
+              subPath: tv
+            - name: torrents-data
+              mountPath: /torrents/tv
+              subPath: tv
+          ports:
+            - containerPort: 8989
+      restartPolicy: Always
+      volumes:
+        - name: sonarr-data
+          persistentVolumeClaim:
+            claimName: sonarr-data-pvc
+        - name: media-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/media
+        - name: torrents-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/torrents
