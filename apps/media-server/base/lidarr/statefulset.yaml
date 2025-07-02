@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lidarr
+spec:
+  serviceName: lidarr
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lidarr
+  template:
+    metadata:
+      labels:
+        app: lidarr
+    spec:
+      containers:
+        - name: lidarr
+          image: linuxserver/lidarr
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+          volumeMounts:
+            - name: lidarr-data
+              mountPath: /config
+              subPath: config
+            - name: media-data
+              mountPath: /music
+              subPath: music
+            - name: torrents-data
+              mountPath: /torrents/music
+              subPath: music
+          ports:
+            - containerPort: 8686
+      restartPolicy: Always
+      volumes:
+        - name: lidarr-data
+          persistentVolumeClaim:
+            claimName: lidarr-data-pvc
+        - name: media-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/media
+        - name: torrents-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/torrents
