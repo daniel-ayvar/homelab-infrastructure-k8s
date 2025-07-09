@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bazarr
+spec:
+  serviceName: "bazarr"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bazarr
+  template:
+    metadata:
+      labels:
+        app: bazarr
+    spec:
+      containers:
+        - name: bazarr
+          image: linuxserver/bazarr
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+          volumeMounts:
+            - name: bazarr-data
+              mountPath: /config
+              subPath: config
+            - name: media-data
+              mountPath: /tv
+              subPath: tv
+            - name: media-data
+              mountPath: /movies
+              subPath: movies
+          ports:
+            - containerPort: 6767
+      restartPolicy: Always
+      volumes:
+        - name: bazarr-data
+          persistentVolumeClaim:
+            claimName: bazarr-data-pvc
+        - name: media-data
+          nfs:
+            server: 10.70.30.10
+            path: /mnt/d8_hybrid_hdd_pool/media
+            readOnly: true

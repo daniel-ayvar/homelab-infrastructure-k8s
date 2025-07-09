@@ -9,6 +9,7 @@ resources:
   - lidarr
   - sonarr
   - plex-auto-langauges
+  - bazarr
 
 labels:
 - includeSelectors: true
