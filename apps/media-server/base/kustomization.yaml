@@ -8,7 +8,7 @@ resources:
   - prowlarr
   - lidarr
   - sonarr
-  - plex-auto-langauges
+  - plex-auto-languages
   - bazarr
 
 labels:
