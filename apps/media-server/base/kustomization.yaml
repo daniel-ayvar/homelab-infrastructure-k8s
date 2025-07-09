@@ -8,6 +8,7 @@ resources:
   - prowlarr
   - lidarr
   - sonarr
+  - plex-auto-langauges
 
 labels:
 - includeSelectors: true
