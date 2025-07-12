@@ -10,6 +10,7 @@ resources:
   - sonarr
   - plex-auto-languages
   - bazarr
+  - cloudflared
 
 labels:
 - includeSelectors: true

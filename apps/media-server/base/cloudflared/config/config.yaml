@@ -1,0 +1,3 @@
+tunnel: 5636dbb6-4f38-4faa-ac01-72e86c0efa6c
+ingress:
+  - service: http_status:404
