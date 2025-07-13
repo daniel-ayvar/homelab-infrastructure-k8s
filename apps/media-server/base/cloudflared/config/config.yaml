@@ -1,3 +1,5 @@
 tunnel: 5636dbb6-4f38-4faa-ac01-72e86c0efa6c
 ingress:
+  - hostname: media.danielayvar.com
+    service: http://overseerr:5055
   - service: http_status:404

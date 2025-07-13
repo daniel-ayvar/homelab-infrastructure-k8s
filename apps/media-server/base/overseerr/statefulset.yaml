@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: overseerr
+spec:
+  serviceName: overseerr
+  replicas: 1
+  selector:
+    matchLabels:
+      app: overseerr
+  template:
+    metadata:
+      labels:
+        app: overseerr
+    spec:
+      containers:
+        - name: overseerr
+          image: sctx/overseerr:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/Chicago"
+          volumeMounts:
+            - name: overseerr-data
+              mountPath: /app/config
+              subPath: config
+          ports:
+            - containerPort: 5055
+      restartPolicy: Always
+      volumes:
+        - name: overseerr-data
+          persistentVolumeClaim:
+            claimName: overseerr-data-pvc
