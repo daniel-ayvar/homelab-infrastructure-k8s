@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - foundry-vtt
   - filebrowser
+  - cloudflared
 
 labels:
 - includeSelectors: true
