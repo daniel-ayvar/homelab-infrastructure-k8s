@@ -26,7 +26,7 @@ spec:
           tolerationSeconds: 300
       containers:
         - name: foundry
-          image: felddy/foundryvtt:release-12.331.0
+          image: felddy/foundryvtt:release-13.348.0
           env:
             - name: FOUNDRY_UID
               value: "1000"
