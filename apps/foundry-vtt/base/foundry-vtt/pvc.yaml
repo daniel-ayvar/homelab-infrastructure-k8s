@@ -13,12 +13,12 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: foundry-vtt-data-rwx
+  name: foundry-vtt-backup-pvc
 spec:
   accessModes:
     - ReadWriteMany
+  storageClassName: nfs-csi
   resources:
     requests:
       storage: 30Gi
-  storageClassName: csi-cephfs-sc
 

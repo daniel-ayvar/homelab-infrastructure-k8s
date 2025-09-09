@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: foundry-vtt-backup-cronjob
+spec:
+  schedule: "0 8 * * *"  # 3 AM CDT = 8 AM UTC
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: foundry-vtt-backup-sa
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 0
+          containers:
+            - name: backup
+              image: bitnami/kubectl:1.32-debian-12
+              securityContext:
+                runAsUser: 0
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -e
+                  
+                  cleanup() {
+                    echo "Ensuring Foundry is scaled back up...";
+                    kubectl scale statefulset foundry-vtt --replicas=1 -n foundry-vtt || echo "Failed to scale up Foundry VTT"
+                  }
+
+                  trap cleanup EXIT
+
+                  echo "Installing rsync...";
+                  apt update && apt install -y rsync
+
+                  echo "Scaling down Foundry VTT...";
+                  kubectl scale statefulset foundry-vtt --replicas=0 -n foundry-vtt
+
+                  echo "Waiting for Foundry VTT to terminate...";
+                  while kubectl get pods -l app=foundry-vtt -n foundry-vtt | grep -q Running; do sleep 1; done
+
+                  echo "Backing up volume...";
+                  mkdir -p /backup/foundry-vtt/foundry-vtt/
+                  rsync -avh /source/ /backup/foundry-vtt/foundry-vtt/ || \
+                    (code=$?; if [ "$code" -eq 24 ]; then echo "Warning: some files vanished during transfer. Continuing..."; else exit $code; fi)
+              volumeMounts:
+                - name: source
+                  mountPath: /source
+                  readOnly: true
+                - name: destination
+                  mountPath: /backup
+          volumes:
+            - name: source
+              persistentVolumeClaim:
+                claimName: foundry-vtt-data
+            - name: destination
+              persistentVolumeClaim:
+                claimName: foundry-vtt-backup-pvc

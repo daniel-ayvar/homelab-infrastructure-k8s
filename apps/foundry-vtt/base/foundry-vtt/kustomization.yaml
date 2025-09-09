@@ -6,6 +6,10 @@ resources:
   - pvc.yaml
   - service.yaml
   - statefulset.yaml
+  - cronjob.yaml
+  - role.yaml
+  - rolebinding.yaml
+  - serviceaccount.yaml
 
 labels:
 - includeSelectors: true
