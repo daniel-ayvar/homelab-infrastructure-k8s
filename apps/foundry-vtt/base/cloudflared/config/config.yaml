@@ -1,8 +1,8 @@
 tunnel: 82c23a46-261c-42ff-b753-bd94fa381950
 ingress:
   - hostname: foundryvtt.danielayvar.com
-    service: http://filebrowser:80
+    service: http://foundry-vtt:30000
   - hostname: foundryvttfiles.danielayvar.com
-    service: http://filebrowser:30000
+    service: http://filebrowser:80
   - service: http_status:404
 
