@@ -5,7 +5,7 @@ metadata:
   name: foundry-vtt
 spec:
   selector:
-    app: foundry
+    app: foundry-vtt
   ports:
     - protocol: TCP
       port: 30000
