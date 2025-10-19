@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: minecraft-bedrock-service
+  name: minecraft-bedrock-server-service
   labels:
     app: minecraft-bedrock-server
 spec:

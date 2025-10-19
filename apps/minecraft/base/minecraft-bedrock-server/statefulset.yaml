@@ -3,7 +3,7 @@ kind: StatefulSet
 metadata:
   name: minecraft-bedrock-server
 spec:
-  serviceName: minecraft-server-service
+  serviceName: minecraft-bedrock-service
   replicas: 1
   selector:
     matchLabels:
@@ -40,7 +40,7 @@ spec:
           - name: SERVER_PORT
             value: "19132"
           - name: ALLOW_LIST_USERS
-            value: "StankyPapaya:000901F66708C460"
+            value: "StankyPapaya:2535432592606304"
         volumeMounts:
           - mountPath: /data
             name: minecraft-bedrock-data

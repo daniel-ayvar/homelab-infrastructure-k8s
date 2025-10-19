@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: minecraft-bedrock-scaler
+  namespace: minecraft
+rules:
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get"]
+    resourceNames: ["minecraft-bedrock-server"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets/scale"]
+    verbs: ["get", "patch"]
+    resourceNames: ["minecraft-bedrock-server"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
