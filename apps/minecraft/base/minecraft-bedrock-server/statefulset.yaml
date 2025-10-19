@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minecraft-bedrock-server
+spec:
+  serviceName: minecraft-server-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft-bedrock-server
+  template:
+    metadata:
+      labels:
+        app: minecraft-bedrock-server
+    spec:
+      securityContext:
+        fsGroup: 1000
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+      containers:
+      - name: minecraft-server
+        image: itzg/minecraft-bedrock-server:latest
+        imagePullPolicy: Always
+        ports:
+          - name: bedrock-udp
+            containerPort: 19132
+            protocol: UDP
+        env:
+          - name: EULA
+            value: "TRUE"
+          - name: VERSION
+            value: "LATEST"
+          - name: SERVER_PORT
+            value: "19132"
+          - name: ALLOW_LIST_USERS
+            value: "StankyPapaya:000901F66708C460"
+        volumeMounts:
+          - mountPath: /data
+            name: minecraft-bedrock-data
+            readOnly: false
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      volumes:
+        - name: minecraft-bedrock-data
+          persistentVolumeClaim:
+            claimName: minecraft-bedrock-data-pvc

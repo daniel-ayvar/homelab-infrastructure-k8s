@@ -2,10 +2,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - minecraft-server
-  - minecraft-bedrock-server
+  - statefulset.yaml
+  - service.yaml
+  - pvc.yaml
 
 labels:
 - includeSelectors: true
   pairs:
-    app.kubernetes.io/component: "base"
+    app.kubernetes.io/name: "minecraft-bedrock-server"

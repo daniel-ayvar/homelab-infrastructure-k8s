@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft-bedrock-service
+  labels:
+    app: minecraft-bedrock-server
+spec:
+  type: LoadBalancer
+  selector:
+    app: minecraft-bedrock-server
+  ports:
+    - name: bedrock-udp
+      port: 19132
+      targetPort: 19132
+      protocol: UDP
