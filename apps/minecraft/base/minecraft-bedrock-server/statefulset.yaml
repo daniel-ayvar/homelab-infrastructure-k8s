@@ -35,12 +35,28 @@ spec:
         env:
           - name: EULA
             value: "TRUE"
+          - name: GAMEMODE
+            value: survival
+          - name: DIFFICULTY
+            value: normal
           - name: VERSION
             value: "LATEST"
           - name: SERVER_PORT
             value: "19132"
-          - name: ALLOW_LIST_USERS
-            value: "StankyPapaya:2535432592606304"
+          - name: VIEW_DISTANCE
+            value: "14"
+          - name: TICK_DISTANCE
+            value: "10"
+          - name: WHITE_LIST
+            value: "false"
+          - name: ALLOW_LIST
+            value: "false"
+          - name: SERVER_IP
+            value: ""
+          - name: EMIT_SERVER_TELEMETRY
+            value: "true"
+          - name: OPS
+            value: "2535432592606304"
         volumeMounts:
           - mountPath: /data
             name: minecraft-bedrock-data
