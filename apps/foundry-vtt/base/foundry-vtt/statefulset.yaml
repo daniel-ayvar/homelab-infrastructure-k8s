@@ -32,6 +32,8 @@ spec:
               value: "1000"
             - name: FOUNDRY_GID
               value: "1000"
+            - name: FOUNDRY_WORLD
+              value: "shores-of-medora"
             - name: FOUNDRY_USERNAME
               valueFrom:
                 secretKeyRef:
