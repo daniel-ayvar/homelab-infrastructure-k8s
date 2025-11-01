@@ -13,6 +13,8 @@ spec:
       labels:
         app: filebrowser
     spec:
+      securityContext:
+        fsGroup: 1000
       tolerations:
         - key: "node.kubernetes.io/not-ready"
           operator: "Exists"
@@ -22,9 +24,18 @@ spec:
           operator: "Exists"
           effect: "NoExecute"
           tolerationSeconds: 300
+
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 1000:1000 /data"]
+          volumeMounts:
+            - name: filebrowser-data
+              mountPath: /data
+
       containers:
         - name: filebrowser
-          image: filebrowser/filebrowser:v2.27.0
+          image: filebrowser/filebrowser:latest
           env:
             - name: PUID
               value: "1000"
@@ -34,6 +45,8 @@ spec:
               value: "America/Chicago"
             - name: FB_DATABASE
               value: /data/database.db
+            - name: FB_NOAUTH
+              value: "true"
           ports:
             - containerPort: 80
           volumeMounts:
@@ -42,10 +55,12 @@ spec:
               readOnly: false
             - mountPath: /data
               name: filebrowser-data
+
       volumes:
         - name: foundry-vtt-data
           persistentVolumeClaim:
             claimName: foundry-vtt-data
+
   volumeClaimTemplates:
     - metadata:
         name: filebrowser-data
