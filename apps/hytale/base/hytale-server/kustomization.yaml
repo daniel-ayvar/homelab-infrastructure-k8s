@@ -4,8 +4,10 @@ kind: Kustomization
 resources:
   - statefulset.yaml
   - service.yaml
+  - command-bridge-service.yaml
   - pvc.yaml
   - configmap-machine-id.yaml
+  - externalsecret-command-bridge.yaml
   - cronjob.yaml
   - role.yaml
   - rolebinding.yaml

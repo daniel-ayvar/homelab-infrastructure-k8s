@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - hytale-server
+  - discord-bot
 
 labels:
 - includeSelectors: true

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hytale-command-bridge
+spec:
+  type: ClusterIP
+  selector:
+    app: hytale-server
+  ports:
+  - name: http
+    port: 18080
+    targetPort: command-bridge
+    protocol: TCP

@@ -14,6 +14,7 @@ spec:
         app: hytale-server
     spec:
       restartPolicy: Always
+      shareProcessNamespace: true
       securityContext:
         fsGroup: 1000
       tolerations:
@@ -82,6 +83,80 @@ spec:
           runAsNonRoot: true
           seccompProfile:
             type: RuntimeDefault
+      - name: hytale-command-bridge
+        image: python:3.12-alpine
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: COMMAND_BRIDGE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hytale-command-bridge
+              key: token
+        ports:
+        - containerPort: 18080
+          name: command-bridge
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -e
+            python - <<'PY'
+            import http.server
+            import os
+            import subprocess
+            import sys
+            
+            TOKEN = os.environ.get("COMMAND_BRIDGE_TOKEN", "")
+            
+            class Handler(http.server.BaseHTTPRequestHandler):
+                def do_POST(self):
+                    if self.path != "/command":
+                        self.send_response(404)
+                        self.end_headers()
+                        return
+                    if not TOKEN or self.headers.get("X-Auth-Token") != TOKEN:
+                        self.send_response(401)
+                        self.end_headers()
+                        self.wfile.write(b"unauthorized\n")
+                        return
+                    length = int(self.headers.get("Content-Length", "0"))
+                    body = self.rfile.read(length).decode("utf-8", "ignore").strip()
+                    if not body or len(body) > 256 or "\n" in body:
+                        self.send_response(400)
+                        self.end_headers()
+                        self.wfile.write(b"invalid command\n")
+                        return
+                    try:
+                        pid = subprocess.check_output(
+                            ["sh", "-c", "pgrep -f 'java.*HytaleServer' | head -n1"]
+                        ).decode().strip()
+                        if not pid:
+                            raise RuntimeError("server process not found")
+                        with open(f"/proc/{pid}/fd/0", "w") as fd:
+                            fd.write(body + "\n")
+                    except Exception as exc:
+                        self.send_response(500)
+                        self.end_headers()
+                        self.wfile.write(f"error: {exc}\n".encode())
+                        return
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b"ok\n")
+            
+                def log_message(self, fmt, *args):
+                    sys.stdout.write("%s\n" % (fmt % args))
+            
+            server = http.server.ThreadingHTTPServer(("", 18080), Handler)
+            server.serve_forever()
+            PY
       initContainers:
       - name: seed-hytale-data
         image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
