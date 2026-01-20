@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hytale-server
+spec:
+  type: ClusterIP
+  selector:
+    app: hytale-server
+  ports:
+  - name: hytale-udp
+    port: 5520
+    targetPort: 5520
+    protocol: UDP

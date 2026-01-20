@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - statefulset.yaml
+  - service.yaml
+  - pvc.yaml
+  - cronjob.yaml
+  - role.yaml
+  - rolebinding.yaml
+  - serviceaccount.yaml
+
+configMapGenerator:
+- name: hytale-server-scripts
+  files:
+    - scripts/entrypoint.sh
+    - scripts/hytale-health.sh
+
+labels:
+- includeSelectors: true
+  pairs:
+    app.kubernetes.io/name: "hytale-server"

@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hytale-backup-cronjob
+  namespace: hytale
+spec:
+  schedule: "0 7 * * *"  # 2 AM CDT = 7 AM UTC
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: hytale-backup-sa
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 0
+          containers:
+            - name: backup
+              image: bitnami/kubectl:1.32-debian-12
+              securityContext:
+                runAsUser: 0
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -e
+
+                  cleanup() {
+                    echo "Ensuring hytale-server is scaled back up...";
+                    kubectl scale statefulset hytale-server --replicas=1 -n hytale || echo "Failed to scale up Hytale"
+                  }
+
+                  trap cleanup EXIT
+
+                  echo "Installing rsync...";
+                  apt update && apt install -y rsync
+
+                  echo "Scaling down hytale-server...";
+                  kubectl scale statefulset hytale-server --replicas=0 -n hytale
+
+                  echo "Waiting for hytale-server to terminate...";
+                  while kubectl get pods -l app=hytale-server -n hytale | grep -q Running; do sleep 1; done
+
+                  echo "Backing up volume...";
+                  mkdir -p /backup/hytale/hytale-server/
+                  rsync -avh /source/ /backup/hytale/hytale-server/ || \
+                    (code=$?; if [ "$code" -eq 24 ]; then echo "Warning: some files vanished during transfer. Continuing..."; else exit $code; fi)
+              volumeMounts:
+                - name: source
+                  mountPath: /source
+                  readOnly: true
+                - name: destination
+                  mountPath: /backup
+          volumes:
+            - name: source
+              persistentVolumeClaim:
+                claimName: hytale-data-hytale-server-0
+            - name: destination
+              persistentVolumeClaim:
+                claimName: hytale-backup-pvc

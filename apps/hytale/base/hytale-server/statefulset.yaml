@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hytale-server
+spec:
+  serviceName: "hytale-server"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hytale-server
+  template:
+    metadata:
+      labels:
+        app: hytale-server
+    spec:
+      securityContext:
+        fsGroup: 1000
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+      containers:
+      - name: hytale-server
+        image: registry:5000/hytale-server:1.0-2026.01.17-4b0f30090
+        command: ["/scripts/entrypoint.sh"]
+        ports:
+        - containerPort: 5520
+          protocol: UDP
+        env:
+        - name: MEMORY
+          value: "8G"
+        - name: TZ
+          value: "America/Chicago"
+        - name: SERVER_PORT
+          value: "5520"
+        - name: SERVER_HOST
+          value: "0.0.0.0"
+        - name: ENABLE_AOT
+          value: "false"
+        - name: DEBUG
+          value: "false"
+        volumeMounts:
+        - mountPath: /data
+          name: hytale-data
+        - mountPath: /scripts
+          name: hytale-scripts
+          readOnly: true
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "2"
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+        livenessProbe:
+          exec:
+            command: ["/scripts/hytale-health.sh"]
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["/scripts/hytale-health.sh"]
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      initContainers:
+      - name: seed-hytale-data
+        image: registry:5000/hytale-server:1.0-2026.01.17-4b0f30090
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -e
+            if [ ! -f /data/HytaleServer.jar ] || [ ! -f /data/Assets.zip ]; then
+              echo "Missing bundled server files in image (/data/HytaleServer.jar or /data/Assets.zip)." >&2
+              exit 1
+            fi
+            if [ ! -f /mnt/data/HytaleServer.jar ] || [ ! -f /mnt/data/Assets.zip ]; then
+              cp -n /data/HytaleServer.jar /mnt/data/
+              cp -n /data/Assets.zip /mnt/data/
+            fi
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: hytale-data
+      volumes:
+      - name: hytale-scripts
+        configMap:
+          name: hytale-server-scripts
+          defaultMode: 0755
+  volumeClaimTemplates:
+  - metadata:
+      name: hytale-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: csi-rbd-sc
