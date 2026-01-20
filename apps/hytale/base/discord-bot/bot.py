@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import os
+import sys
 
 import aiohttp
 import discord
@@ -19,6 +21,14 @@ PREFIX = os.getenv("COMMAND_PREFIX", "!hytale")
 BRIDGE_URL = _get_env("BRIDGE_URL")
 BRIDGE_TOKEN = _get_env("BRIDGE_TOKEN")
 
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+discord.utils.setup_logging(handler=logging.StreamHandler(sys.stdout), level=logging.INFO)
+logger = logging.getLogger("hytale-discord-bot")
+
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -34,7 +44,7 @@ async def _post_command(session, command):
 
 @client.event
 async def on_ready():
-    print(f"discord bot ready: {client.user}")
+    logger.info("discord bot ready: %s", client.user)
 
 
 @client.event
@@ -50,19 +60,42 @@ async def on_message(message):
         return
     command = content[len(PREFIX):].strip()
     if not command:
+        logger.warning("command rejected: empty")
         await message.channel.send("No command provided.")
         return
+    if command.lower() in {"status", "ping"}:
+        logger.info("status check requested by author=%s", message.author.id)
+        await message.channel.send("Bot is online.")
+        return
+    logger.info(
+        "command received: channel=%s author=%s command=%r",
+        message.channel.id,
+        message.author.id,
+        command,
+    )
     async with aiohttp.ClientSession() as session:
         status, text = await _post_command(session, command)
     if status != 200:
+        logger.error("bridge error: status=%s body=%r", status, text)
         await message.channel.send(f"Bridge error ({status}): {text or 'no body'}")
         return
+    logger.info("command sent successfully")
     await message.channel.send("Command sent.")
 
 
+@client.event
+async def on_error(event, *args, **kwargs):
+    logger.exception("discord event error: %s", event)
+
+
 async def main():
+    logger.info("startup config: channel=%s author=%s prefix=%r bridge_url=%r", CHANNEL_ID, AUTHOR_ID, PREFIX, BRIDGE_URL)
     async with client:
-        await client.start(TOKEN)
+        try:
+            await client.start(TOKEN)
+        except Exception:
+            logger.exception("client.start failed")
+            raise
 
 
 if __name__ == "__main__":

@@ -35,6 +35,8 @@ spec:
             secretKeyRef:
               name: hytale-command-bridge
               key: token
+        - name: PYTHONUNBUFFERED
+          value: "1"
         - name: PIP_TARGET
           value: /tmp/pip
         - name: PYTHONPATH
