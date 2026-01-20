@@ -10,12 +10,6 @@ resources:
   - rolebinding.yaml
   - serviceaccount.yaml
 
-configMapGenerator:
-- name: hytale-server-scripts
-  files:
-    - scripts/entrypoint.sh
-    - scripts/hytale-health.sh
-
 labels:
 - includeSelectors: true
   pairs:

@@ -26,30 +26,25 @@ spec:
           tolerationSeconds: 300
       containers:
       - name: hytale-server
-        image: registry:5000/hytale-server:1.0-2026.01.17-4b0f30090
-        command: ["/scripts/entrypoint.sh"]
+        image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
+        workingDir: /home/container
         ports:
         - containerPort: 5520
           protocol: UDP
         env:
-        - name: MEMORY
-          value: "8G"
         - name: TZ
           value: "America/Chicago"
+        - name: SERVER_IP
+          value: "0.0.0.0"
         - name: SERVER_PORT
           value: "5520"
-        - name: SERVER_HOST
-          value: "0.0.0.0"
-        - name: ENABLE_AOT
-          value: "false"
+        - name: PROD
+          value: "FALSE"
         - name: DEBUG
-          value: "false"
+          value: "FALSE"
         volumeMounts:
-        - mountPath: /data
+        - mountPath: /home/container
           name: hytale-data
-        - mountPath: /scripts
-          name: hytale-scripts
-          readOnly: true
         resources:
           requests:
             memory: "8Gi"
@@ -59,14 +54,14 @@ spec:
             cpu: "4"
         livenessProbe:
           exec:
-            command: ["/scripts/hytale-health.sh"]
+            command: ["/bin/sh", "-c", "pgrep -f 'java.*HytaleServer' >/dev/null 2>&1"]
           initialDelaySeconds: 180
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
         readinessProbe:
           exec:
-            command: ["/scripts/hytale-health.sh"]
+            command: ["/bin/sh", "-c", "pgrep -f 'java.*HytaleServer' >/dev/null 2>&1"]
           initialDelaySeconds: 60
           periodSeconds: 30
           timeoutSeconds: 10
@@ -82,25 +77,20 @@ spec:
             type: RuntimeDefault
       initContainers:
       - name: seed-hytale-data
-        image: registry:5000/hytale-server:1.0-2026.01.17-4b0f30090
+        image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
         command: ["/bin/sh", "-c"]
         args:
           - |
             set -e
-            if [ ! -f /data/HytaleServer.jar ] || [ ! -f /data/Assets.zip ]; then
-              echo "Missing bundled server files in image (/data/HytaleServer.jar or /data/Assets.zip)." >&2
+            if [ ! -f /home/container/HytaleServer.jar ] || [ ! -f /home/container/Assets.zip ]; then
+              echo "Missing bundled server files in image (/home/container)." >&2
               exit 1
             fi
-            cp -f /data/HytaleServer.jar /mnt/data/
-            cp -f /data/Assets.zip /mnt/data/
+            cp -f /home/container/HytaleServer.jar /mnt/data/
+            cp -f /home/container/Assets.zip /mnt/data/
         volumeMounts:
         - mountPath: /mnt/data
           name: hytale-data
-      volumes:
-      - name: hytale-scripts
-        configMap:
-          name: hytale-server-scripts
-          defaultMode: 0755
   volumeClaimTemplates:
   - metadata:
       name: hytale-data
