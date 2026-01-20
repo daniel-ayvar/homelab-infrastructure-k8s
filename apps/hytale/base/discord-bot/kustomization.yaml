@@ -4,6 +4,9 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - externalsecret.yaml
+  - serviceaccount.yaml
+  - role.yaml
+  - rolebinding.yaml
 
 configMapGenerator:
   - name: hytale-discord-bot
