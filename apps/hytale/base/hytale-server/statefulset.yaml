@@ -27,6 +27,7 @@ spec:
       containers:
       - name: hytale-server
         image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
+        imagePullPolicy: Always
         ports:
         - containerPort: 5520
           protocol: UDP
@@ -77,6 +78,7 @@ spec:
       initContainers:
       - name: seed-hytale-data
         image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
+        imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
         args:
           - |
