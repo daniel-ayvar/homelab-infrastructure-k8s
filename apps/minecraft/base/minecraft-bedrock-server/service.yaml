@@ -4,8 +4,11 @@ metadata:
   name: minecraft-bedrock-server-service
   labels:
     app: minecraft-bedrock-server
+  annotations:
+    service.cilium.io/loadbalancer-ipam-ips: "10.70.30.202"
 spec:
   type: LoadBalancer
+  loadBalancerIP: 10.70.30.202
   selector:
     app: minecraft-bedrock-server
   ports:

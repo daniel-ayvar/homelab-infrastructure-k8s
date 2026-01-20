@@ -4,6 +4,7 @@ metadata:
   name: plex-media-server
   annotations:
     service.cilium.io/global: "true"
+    service.cilium.io/loadbalancer-ipam-ips: "10.70.30.201"
 spec:
   selector:
     app: plex
@@ -14,4 +15,4 @@ spec:
       targetPort: 32400
       nodePort: 32400 
   type: LoadBalancer
-
+  loadBalancerIP: 10.70.30.201

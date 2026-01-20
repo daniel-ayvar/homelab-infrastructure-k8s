@@ -4,6 +4,7 @@ metadata:
   name: minecraft-service
   annotations:
     service.cilium.io/global: "true"
+    service.cilium.io/loadbalancer-ipam-ips: "10.70.30.200"
 spec:
   selector:
     app: minecraft-server
@@ -11,4 +12,4 @@ spec:
     - protocol: TCP
       port: 25565
   type: LoadBalancer
-
+  loadBalancerIP: 10.70.30.200
