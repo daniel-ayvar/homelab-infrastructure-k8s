@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hytale-machine-id
+data:
+  # Regenerate with: uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]'
+  machine-id: "447e8c219a0b45808e45d38314541376"

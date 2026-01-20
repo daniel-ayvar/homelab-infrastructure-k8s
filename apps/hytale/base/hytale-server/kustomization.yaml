@@ -5,6 +5,7 @@ resources:
   - statefulset.yaml
   - service.yaml
   - pvc.yaml
+  - configmap-machine-id.yaml
   - cronjob.yaml
   - role.yaml
   - rolebinding.yaml
