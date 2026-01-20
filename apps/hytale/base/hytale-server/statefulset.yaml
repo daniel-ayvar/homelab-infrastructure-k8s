@@ -91,10 +91,8 @@ spec:
               echo "Missing bundled server files in image (/data/HytaleServer.jar or /data/Assets.zip)." >&2
               exit 1
             fi
-            if [ ! -f /mnt/data/HytaleServer.jar ] || [ ! -f /mnt/data/Assets.zip ]; then
-              cp -n /data/HytaleServer.jar /mnt/data/
-              cp -n /data/Assets.zip /mnt/data/
-            fi
+            cp -f /data/HytaleServer.jar /mnt/data/
+            cp -f /data/Assets.zip /mnt/data/
         volumeMounts:
         - mountPath: /mnt/data
           name: hytale-data
