@@ -28,6 +28,8 @@ spec:
       - name: hytale-server
         image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
         imagePullPolicy: Always
+        tty: true
+        stdin: true
         ports:
         - containerPort: 5520
           protocol: UDP
