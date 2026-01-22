@@ -96,6 +96,16 @@ def _init_db():
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS response_links (
+                message_id TEXT PRIMARY KEY,
+                actor_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(actor_id) REFERENCES actors(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS webhooks (
                 channel_id TEXT PRIMARY KEY,
                 webhook_id TEXT NOT NULL,
@@ -299,6 +309,14 @@ def _fetch_actor_by_name(name: str) -> Optional[sqlite3.Row]:
         ).fetchone()
 
 
+def _fetch_actor_by_id(actor_id: int) -> Optional[sqlite3.Row]:
+    with _connect_db() as conn:
+        return conn.execute(
+            "SELECT * FROM actors WHERE id = ?",
+            (actor_id,),
+        ).fetchone()
+
+
 def _store_message(actor_id: int, author: discord.User, content: str):
     with _connect_db() as conn:
         conn.execute(
@@ -314,6 +332,28 @@ def _store_message(actor_id: int, author: discord.User, content: str):
                 _ts(_utc_now()),
             ),
         )
+
+
+def _store_response_link(actor_id: int, message_id: int):
+    with _connect_db() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO response_links (message_id, actor_id, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (str(message_id), actor_id, _ts(_utc_now())),
+        )
+
+
+def _lookup_response_actor(message_id: int) -> Optional[int]:
+    with _connect_db() as conn:
+        row = conn.execute(
+            "SELECT actor_id FROM response_links WHERE message_id = ?",
+            (str(message_id),),
+        ).fetchone()
+        if not row:
+            return None
+        return int(row["actor_id"])
 
 
 def _load_context(actor_id: int) -> List[Dict[str, str]]:
@@ -539,20 +579,33 @@ async def on_ready():
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-    root_message = await _get_root_message(message)
-    root_role_ids = {role.id for role in root_message.role_mentions}
-    direct_role_ids = {role.id for role in message.role_mentions}
-    actor_role_ids = direct_role_ids or root_role_ids
-    if not actor_role_ids:
+    actor_ids: List[int] = []
+    if message.reference and message.reference.message_id:
+        linked_actor_id = _lookup_response_actor(message.reference.message_id)
+        if linked_actor_id:
+            actor_ids.append(linked_actor_id)
+
+    if not actor_ids:
+        root_message = await _get_root_message(message)
+        root_role_ids = {role.id for role in root_message.role_mentions}
+        direct_role_ids = {role.id for role in message.role_mentions}
+        actor_role_ids = direct_role_ids or root_role_ids
+        if not actor_role_ids:
+            return
+        for role_id in actor_role_ids:
+            actor = _fetch_actor_by_role(role_id)
+            if actor:
+                actor_ids.append(actor["id"])
+    if not actor_ids:
         return
 
     handled = False
     seen_actors = set()
-    for role_id in actor_role_ids:
-        if role_id in seen_actors:
+    for actor_id in actor_ids:
+        if actor_id in seen_actors:
             continue
-        seen_actors.add(role_id)
-        actor = _fetch_actor_by_role(role_id)
+        seen_actors.add(actor_id)
+        actor = _fetch_actor_by_id(actor_id)
         if not actor:
             continue
         handled = True
@@ -589,6 +642,7 @@ async def on_message(message: discord.Message):
                         "avatar_url": avatar_url,
                         "message_reference": {"message_id": message.id},
                     },
+                    params={"wait": "true"},
                     timeout=15,
                 )
                 if not resp.ok:
@@ -598,6 +652,13 @@ async def on_message(message: discord.Message):
                         resp.text[:1000],
                     )
                     await message.reply("Error: unable to send actor response.")
+                else:
+                    try:
+                        data = resp.json()
+                        if data.get("id"):
+                            _store_response_link(actor["id"], int(data["id"]))
+                    except Exception:
+                        logger.exception("failed to parse webhook response")
             else:
                 try:
                     webhook_obj = await parent_channel.create_webhook(
@@ -614,6 +675,7 @@ async def on_message(message: discord.Message):
                             "avatar_url": avatar_url,
                             "message_reference": {"message_id": message.id},
                         },
+                        params={"wait": "true"},
                         timeout=15,
                     )
                     if not resp.ok:
@@ -623,9 +685,17 @@ async def on_message(message: discord.Message):
                             resp.text[:1000],
                         )
                         await message.reply("Error: unable to send actor response.")
+                    else:
+                        try:
+                            data = resp.json()
+                            if data.get("id"):
+                                _store_response_link(actor["id"], int(data["id"]))
+                        except Exception:
+                            logger.exception("failed to parse webhook response")
                 except Exception:
                     logger.exception("failed to create webhook")
-                    await message.reply("Error: unable to send actor response.")
+                    reply_msg = await message.reply("Error: unable to send actor response.")
+                    _store_response_link(actor["id"], reply_msg.id)
         except Exception:
             logger.exception(
                 "openai request failed actor=%s channel=%s thread=%s author=%s",
@@ -634,7 +704,8 @@ async def on_message(message: discord.Message):
                 "none",
                 message.author.id,
             )
-            await message.reply("Error: request failed.")
+            reply_msg = await message.reply("Error: request failed.")
+            _store_response_link(actor["id"], reply_msg.id)
     if handled:
         return
 
