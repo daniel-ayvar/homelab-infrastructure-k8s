@@ -26,6 +26,7 @@ MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "1200"))
 MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "25"))
 MAX_HISTORY_AGE_SECONDS = int(os.getenv("MAX_HISTORY_AGE_SECONDS", "86400"))
 MAX_THREAD_MESSAGES = int(os.getenv("MAX_THREAD_MESSAGES", "200"))
+MAX_REPLY_CHAIN = int(os.getenv("MAX_REPLY_CHAIN", "20"))
 DB_PATH = os.getenv("ACTOR_DB_PATH", "/data/actors.db")
 
 if not DISCORD_TOKEN or not OPENAI_API_KEY:
@@ -336,30 +337,6 @@ def _load_context(actor_id: int) -> List[Dict[str, str]]:
     return messages
 
 
-async def _load_thread_context(
-    thread: discord.Thread,
-    token_budget: int,
-    seen: set,
-) -> Tuple[List[Dict[str, str]], int]:
-    messages: List[Dict[str, str]] = []
-    async for item in thread.history(limit=MAX_THREAD_MESSAGES, oldest_first=True):
-        if item.author.bot:
-            continue
-        content = (item.content or "").strip()
-        if not content:
-            continue
-        line = f"{item.author.display_name}: {content}"
-        if line in seen:
-            continue
-        tokens = _approx_tokens(line)
-        if tokens > token_budget:
-            break
-        token_budget -= tokens
-        seen.add(line)
-        messages.append({"role": "user", "content": line})
-    return messages, token_budget
-
-
 def _load_saved_context(
     actor_id: int,
     token_budget: int,
@@ -390,6 +367,48 @@ def _load_saved_context(
         seen.add(line)
         messages.append({"role": "user", "content": line})
     return messages
+
+
+async def _load_reply_chain(
+    message: discord.Message,
+    token_budget: int,
+    seen: set,
+) -> Tuple[List[Dict[str, str]], int]:
+    chain: List[discord.Message] = []
+    current = message
+    depth = 0
+    while current.reference and depth < MAX_REPLY_CHAIN:
+        ref = current.reference
+        ref_message = ref.resolved
+        if ref_message is None and ref.message_id:
+            try:
+                ref_message = await current.channel.fetch_message(ref.message_id)
+            except Exception:
+                break
+        if not isinstance(ref_message, discord.Message):
+            break
+        chain.append(ref_message)
+        current = ref_message
+        depth += 1
+
+    chain.reverse()
+    messages: List[Dict[str, str]] = []
+    for item in chain:
+        if item.author.bot:
+            continue
+        content = (item.content or "").strip()
+        if not content:
+            continue
+        line = f"{item.author.display_name}: {content}"
+        if line in seen:
+            continue
+        tokens = _approx_tokens(line)
+        if tokens > token_budget:
+            break
+        token_budget -= tokens
+        seen.add(line)
+        messages.append({"role": "user", "content": line})
+    return messages, token_budget
 
 
 @tree.command(name="actor-register", description="Register a new actor.")
@@ -495,21 +514,11 @@ async def on_message(message: discord.Message):
         token_budget = MAX_CONTEXT_TOKENS
         seen = set()
 
-        if isinstance(message.channel, discord.Thread):
-            thread = message.channel
-            parent_channel = thread.parent or thread
-        else:
-            thread = await message.create_thread(
-                name=f"{actor['name']} chat",
-                auto_archive_duration=60,
-            )
-            parent_channel = thread.parent or thread
-
-        thread_history, token_budget = await _load_thread_context(
-            thread, token_budget, seen
+        parent_channel = message.channel
+        reply_context, token_budget = await _load_reply_chain(
+            message, token_budget, seen
         )
-        messages.extend(thread_history)
-
+        messages.extend(reply_context)
         if token_budget > 0:
             messages.extend(_load_saved_context(actor["id"], token_budget, seen))
         try:
@@ -518,20 +527,26 @@ async def on_message(message: discord.Message):
             avatar_url = actor["avatar_url"]
             content = f"{message.author.mention} {response}"
             webhook = _get_webhook(parent_channel.id)
-            params = {"thread_id": thread.id} if isinstance(thread, discord.Thread) else None
             if webhook:
                 webhook_id, webhook_token = webhook
                 webhook_url = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}"
-                requests.post(
+                resp = requests.post(
                     webhook_url,
                     json={
                         "content": content,
                         "username": actor_name,
                         "avatar_url": avatar_url,
+                        "message_reference": {"message_id": message.id},
                     },
-                    params=params,
                     timeout=15,
                 )
+                if not resp.ok:
+                    logger.error(
+                        "webhook post failed status=%s body=%s",
+                        resp.status_code,
+                        resp.text[:1000],
+                    )
+                    await message.reply("Error: unable to send actor response.")
             else:
                 try:
                     webhook_obj = await parent_channel.create_webhook(
@@ -540,27 +555,35 @@ async def on_message(message: discord.Message):
                     )
                     _save_webhook(parent_channel.id, webhook_obj.id, webhook_obj.token)
                     webhook_url = f"https://discord.com/api/webhooks/{webhook_obj.id}/{webhook_obj.token}"
-                    requests.post(
+                    resp = requests.post(
                         webhook_url,
                         json={
                             "content": content,
                             "username": actor_name,
                             "avatar_url": avatar_url,
+                            "message_reference": {"message_id": message.id},
                         },
-                        params=params,
                         timeout=15,
                     )
+                    if not resp.ok:
+                        logger.error(
+                            "webhook post failed status=%s body=%s",
+                            resp.status_code,
+                            resp.text[:1000],
+                        )
+                        await message.reply("Error: unable to send actor response.")
                 except Exception:
-                    await thread.send(content)
+                    logger.exception("failed to create webhook")
+                    await message.reply("Error: unable to send actor response.")
         except Exception:
             logger.exception(
                 "openai request failed actor=%s channel=%s thread=%s author=%s",
                 actor["name"],
                 parent_channel.id,
-                thread.id if isinstance(thread, discord.Thread) else "none",
+                "none",
                 message.author.id,
             )
-            await thread.send("...")
+            await message.reply("Error: request failed.")
     if handled:
         return
 
