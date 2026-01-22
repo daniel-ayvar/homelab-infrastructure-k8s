@@ -629,7 +629,7 @@ async def on_message(message: discord.Message):
                 continue
             actor_name = actor["name"]
             avatar_url = actor["avatar_url"]
-            content = f"{message.author.mention} {response}"
+            content = response
             webhook = _get_webhook(parent_channel.id)
             if webhook:
                 webhook_id, webhook_token = webhook
