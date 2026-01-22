@@ -171,6 +171,30 @@ def _parse_detail(html: str, stub: Dict) -> Dict:
     return item
 
 
+def _build_item_from_stub(stub: Dict) -> Dict:
+    pub_date_text = stub.get("published_date") or datetime.now(timezone.utc).strftime(
+        "%b %d, %Y"
+    )
+    pub_date = _to_rfc822(pub_date_text)
+    description = stub.get("intro")
+    if not description and stub.get("event_range"):
+        description = f"Event window: {stub['event_range']}"
+    item = {
+        "title": stub.get("title") or stub.get("url"),
+        "link": stub.get("url"),
+        "guid": stub.get("url"),
+        "pubDate": pub_date,
+        "author": stub.get("author") or "Pokemon Zone",
+        "categories": [cat for cat in [stub.get("category")] if cat],
+        "description": description,
+        "content_html": None,
+    }
+    image_url = stub.get("image")
+    if image_url:
+        item["image"] = {"url": image_url}
+    return item
+
+
 def build_items(feed: dict, parser: dict):
     base_url = feed.get("site") or BASE_URL
     index_url = parser.get("index_url") or base_url
@@ -182,5 +206,5 @@ def build_items(feed: dict, parser: dict):
             detail_html = fetch_html(stub["url"], timeout=12, user_agent=None)
             items.append(_parse_detail(detail_html, stub))
         except Exception:
-            continue
+            items.append(_build_item_from_stub(stub))
     return items

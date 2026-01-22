@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -9,6 +10,7 @@ from parser_shared_utils import fetch_html, first_image_url, strip_ws, to_absolu
 
 BASE_URL = "https://dokkaninfo.com"
 INDEX_URL = "https://dokkaninfo.com/news"
+API_URL = "https://dokkaninfo.com/api/news"
 NEWS_LINK_RE = re.compile(r"^/news/(\d+)(?:/)?$")
 POSTED_BY_RE = re.compile(r"Posted by\s+([A-Za-z0-9 _.-]+)", re.IGNORECASE)
 START_DATE_RE = re.compile(r"Start Date:\s*(.+)", re.IGNORECASE)
@@ -286,9 +288,43 @@ def _build_item_from_stub(stub: Dict) -> Dict:
     }
 
 
+def _build_items_from_api(max_items: int) -> List[Dict]:
+    html = fetch_html(API_URL)
+    payload = json.loads(html)
+    items = []
+    for entry in payload.get("data", [])[:max_items]:
+        entry_id = entry.get("id")
+        if not entry_id:
+            continue
+        title = strip_ws(entry.get("title") or "") or f"News {entry_id}"
+        summary = strip_ws(entry.get("summary") or "") or None
+        banner = entry.get("banner")
+        image_url = to_absolute(BASE_URL, banner) if banner else None
+        start_at = entry.get("start_at")
+        pub_dt = datetime.fromtimestamp(start_at, tz=timezone.utc) if start_at else datetime.now(timezone.utc)
+        link = f"{BASE_URL}/news/{entry_id}"
+        item = {
+            "title": title,
+            "link": link,
+            "guid": link,
+            "pubDate": to_rfc822(pub_dt),
+            "author": None,
+            "description": summary,
+            "content_html": None,
+        }
+        if image_url:
+            item["image"] = {"url": image_url}
+        items.append(item)
+    return items
+
+
 def build_items(feed: dict, parser: dict) -> List[dict]:
-    index_url = parser.get("index_url") or INDEX_URL
     max_items = int(parser.get("max_items", 20))
+    try:
+        return _build_items_from_api(max_items)
+    except Exception:
+        pass
+    index_url = parser.get("index_url") or INDEX_URL
     html = fetch_html(index_url)
     stubs = _parse_index(html, max_items)
     items = []
