@@ -58,6 +58,7 @@ class RssDiscordBot:
                     title=payload["title"],
                     url=payload["link"] or None,
                     description=payload["summary"] or None,
+                    color=discord.Color.blue() if mention else discord.Embed.Empty,
                 )
                 if payload.get("author"):
                     embed.set_author(name=payload["author"])

@@ -77,7 +77,6 @@ def format_message(role_id: str, entry, mention: bool) -> dict:
     title = entry.get("title", "(untitled)").strip()
     link = entry.get("link", "").strip()
     role = f"<@&{role_id}> " if role_id and mention else ""
-    footer = "\n\n*!role subscribe | !role unsubscribe*"
     summary = (entry.get("summary") or entry.get("description") or "").strip()
     author = (entry.get("author") or "").strip()
     published = None
@@ -87,9 +86,12 @@ def format_message(role_id: str, entry, mention: bool) -> dict:
         published = datetime(*published_parsed[:6], tzinfo=timezone.utc)
     elif updated_parsed:
         published = datetime(*updated_parsed[:6], tzinfo=timezone.utc)
-    message = f"{role}{footer}" if role else footer
+    command_hint = ""
+    if role:
+        command_hint = "\n\nToggle your mention:\n```\n!role subscribe\n!role unsubscribe\n```"
+    message = f"{role}{command_hint}"
     return {
-        "title": title,
+        "title": f"News: {title}",
         "link": link,
         "summary": summary,
         "content": message,
