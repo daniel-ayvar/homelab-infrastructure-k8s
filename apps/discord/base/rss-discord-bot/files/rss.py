@@ -98,7 +98,7 @@ def format_message(
         command_hint = "\n\nToggle your mention:\n```\n!role subscribe\n!role unsubscribe\n```"
     message = f"{role}{command_hint}"
     return {
-        "title": f"News: {title}",
+        "title": title,
         "link": link,
         "summary": summary,
         "content": message,
