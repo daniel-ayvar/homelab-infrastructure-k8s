@@ -27,6 +27,9 @@ MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "25"))
 MAX_HISTORY_AGE_SECONDS = int(os.getenv("MAX_HISTORY_AGE_SECONDS", "86400"))
 MAX_THREAD_MESSAGES = int(os.getenv("MAX_THREAD_MESSAGES", "200"))
 MAX_REPLY_CHAIN = int(os.getenv("MAX_REPLY_CHAIN", "20"))
+MAX_SUMMARY_TOKENS = int(os.getenv("MAX_SUMMARY_TOKENS", "800"))
+SUMMARY_COMPACT_THRESHOLD = int(os.getenv("SUMMARY_COMPACT_THRESHOLD", "40"))
+SUMMARY_COMPACT_BATCH = int(os.getenv("SUMMARY_COMPACT_BATCH", "25"))
 DB_PATH = os.getenv("ACTOR_DB_PATH", "/data/actors.db")
 
 if not DISCORD_TOKEN or not OPENAI_API_KEY:
@@ -60,6 +63,8 @@ def _init_db():
                 role_id TEXT NOT NULL,
                 context TEXT NOT NULL,
                 avatar_url TEXT,
+                summary TEXT,
+                summary_updated_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -117,6 +122,10 @@ def _init_db():
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(actors)")]
         if "avatar_url" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN avatar_url TEXT")
+        if "summary" not in columns:
+            conn.execute("ALTER TABLE actors ADD COLUMN summary TEXT")
+        if "summary_updated_at" not in columns:
+            conn.execute("ALTER TABLE actors ADD COLUMN summary_updated_at TEXT")
 
 
 def _utc_now() -> datetime:
@@ -166,6 +175,21 @@ def _openai_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
         resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"].strip(), None
+
+
+def _openai_summary(prompt: str) -> Tuple[str, Optional[str]]:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Summarize the conversation notes below in a compact, factual way. "
+                "Keep it under the token limit and preserve important names, goals, "
+                "relationships, and recent events. No extra commentary."
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
+    return _openai_chat(messages)
 
 
 def _build_system_prompt(context: str) -> str:
@@ -334,6 +358,69 @@ def _store_message(actor_id: int, author: discord.User, content: str):
         )
 
 
+def _get_actor_summary(actor_id: int) -> Optional[str]:
+    with _connect_db() as conn:
+        row = conn.execute(
+            "SELECT summary FROM actors WHERE id = ?",
+            (actor_id,),
+        ).fetchone()
+        if not row:
+            return None
+        summary = row["summary"]
+        return summary.strip() if summary else None
+
+
+def _update_actor_summary(actor_id: int, summary: str):
+    with _connect_db() as conn:
+        conn.execute(
+            """
+            UPDATE actors SET summary = ?, summary_updated_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (summary, _ts(_utc_now()), _ts(_utc_now()), actor_id),
+        )
+
+
+def _compact_history(actor_id: int):
+    with _connect_db() as conn:
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM messages WHERE actor_id = ?",
+            (actor_id,),
+        ).fetchone()
+        if not count_row or count_row["cnt"] <= SUMMARY_COMPACT_THRESHOLD:
+            return
+        rows = conn.execute(
+            """
+            SELECT id, author_name, content
+            FROM messages
+            WHERE actor_id = ?
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (actor_id, SUMMARY_COMPACT_BATCH),
+        ).fetchall()
+    if not rows:
+        return
+    lines = [f"{row['author_name']}: {row['content']}" for row in rows]
+    existing = _get_actor_summary(actor_id)
+    prompt = ""
+    if existing:
+        prompt += f"Existing summary:\n{existing}\n\n"
+    prompt += "New conversation lines:\n" + "\n".join(lines)
+    summary, error = _openai_summary(prompt)
+    if error:
+        logger.warning("summary update skipped error=%s", error)
+        return
+    if not summary:
+        return
+    _update_actor_summary(actor_id, summary)
+    ids = [str(row["id"]) for row in rows]
+    with _connect_db() as conn:
+        conn.execute(
+            f"DELETE FROM messages WHERE id IN ({','.join(['?'] * len(ids))})",
+            ids,
+        )
+
 def _store_response_link(actor_id: int, message_id: int):
     with _connect_db() as conn:
         conn.execute(
@@ -401,6 +488,13 @@ def _load_saved_context(
         ).fetchall()
     rows = list(reversed(rows))
     messages = []
+    summary = _get_actor_summary(actor_id)
+    if summary:
+        summary_line = f"Summary so far: {summary}"
+        tokens = _approx_tokens(summary_line)
+        if tokens <= token_budget:
+            token_budget -= tokens
+            messages.append({"role": "system", "content": summary_line})
     for row in rows:
         line = f"{row['author_name']}: {row['content']}"
         if line in seen:
@@ -610,6 +704,7 @@ async def on_message(message: discord.Message):
             continue
         handled = True
         _store_message(actor["id"], message.author, message.content)
+        _compact_history(actor["id"])
         system_prompt = _build_system_prompt(actor["context"])
         messages = [{"role": "system", "content": system_prompt}]
         token_budget = MAX_CONTEXT_TOKENS
