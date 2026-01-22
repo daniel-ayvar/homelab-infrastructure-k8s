@@ -121,7 +121,7 @@ def _approx_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def _openai_chat(messages: List[Dict[str, str]]) -> str:
+def _openai_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
     payload = {
         "model": OPENAI_MODEL,
         "messages": messages,
@@ -148,9 +148,14 @@ def _openai_chat(messages: List[Dict[str, str]]) -> str:
             resp.headers.get("x-ratelimit-remaining-requests"),
             resp.headers.get("x-ratelimit-reset-requests"),
         )
+        data = resp.json()
+        error = data.get("error", {})
+        code = error.get("code")
+        if code == "insufficient_quota":
+            return "", "insufficient_quota"
         resp.raise_for_status()
     data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+    return data["choices"][0]["message"]["content"].strip(), None
 
 
 def _build_system_prompt(context: str) -> str:
@@ -522,7 +527,10 @@ async def on_message(message: discord.Message):
         if token_budget > 0:
             messages.extend(_load_saved_context(actor["id"], token_budget, seen))
         try:
-            response = await asyncio.to_thread(_openai_chat, messages)
+            response, error = await asyncio.to_thread(_openai_chat, messages)
+            if error == "insufficient_quota":
+                await message.reply("Error: AI quota is exhausted.")
+                continue
             actor_name = actor["name"]
             avatar_url = actor["avatar_url"]
             content = f"{message.author.mention} {response}"
