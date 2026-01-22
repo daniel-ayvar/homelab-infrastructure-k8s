@@ -135,7 +135,19 @@ def _openai_chat(messages: List[Dict[str, str]]) -> str:
         data=json.dumps(payload),
         timeout=45,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        logger.error(
+            "openai error status=%s body=%s",
+            resp.status_code,
+            resp.text[:2000],
+        )
+        logger.error(
+            "openai rate headers limit=%s remaining=%s reset=%s",
+            resp.headers.get("x-ratelimit-limit-requests"),
+            resp.headers.get("x-ratelimit-remaining-requests"),
+            resp.headers.get("x-ratelimit-reset-requests"),
+        )
+        resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"].strip()
 
