@@ -1,4 +1,5 @@
 import datetime
+import logging
 import mimetypes
 import threading
 import xml.sax.saxutils as xml_escape
@@ -6,6 +7,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Dict, List
 
 import parser_registry
+
+logger = logging.getLogger("rss-parser")
 
 
 def _guess_mime_type(url: str) -> str:
@@ -35,8 +38,20 @@ def _rss_document(feed: Dict) -> str:
     items = []
     for parser in feed["parsers"]:
         try:
-            items.extend(parser_registry.build_items(feed, parser))
+            parsed = parser_registry.build_items(feed, parser)
+            items.extend(parsed)
+            logger.info(
+                "parser=%s feed=%s items=%d",
+                parser.get("type", "unknown"),
+                feed.get("name", "unknown"),
+                len(parsed),
+            )
         except Exception:
+            logger.exception(
+                "parser failed parser=%s feed=%s",
+                parser.get("type", "unknown"),
+                feed.get("name", "unknown"),
+            )
             continue
     seen = set()
     unique_items = []
@@ -101,6 +116,8 @@ def _rss_document(feed: Dict) -> str:
                 content=content_block,
             )
         )
+    if not item_blocks:
+        logger.warning("no items built for feed=%s", feed.get("name", "unknown"))
     items_xml = "\n".join(item_blocks)
     media_ns = ' xmlns:media="http://search.yahoo.com/mrss/"' if has_media else ""
     return """<?xml version="1.0" encoding="UTF-8"?>
