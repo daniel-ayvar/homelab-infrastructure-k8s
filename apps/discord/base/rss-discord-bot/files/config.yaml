@@ -14,3 +14,4 @@ subscriptions:
     feeds:
       - rss_feed_url: "http://rss-parser-dokkaninfo:8083/rss.xml"
         filter_regex: null
+        author_override: "DokkanInfo"

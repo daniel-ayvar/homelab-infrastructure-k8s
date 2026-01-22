@@ -53,7 +53,12 @@ class RssDiscordBot:
             new_entries.reverse()
             for entry_id, entry in new_entries:
                 mention = should_mention(entry, compiled)
-                payload = format_message(role_id, entry, mention)
+                payload = format_message(
+                    role_id,
+                    entry,
+                    mention,
+                    author_override=feed.get("author_override"),
+                )
                 embed = discord.Embed(
                     title=payload["title"],
                     url=payload["link"] or None,

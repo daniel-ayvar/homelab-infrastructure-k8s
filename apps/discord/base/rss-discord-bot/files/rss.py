@@ -73,12 +73,19 @@ def extract_image_url(entry) -> Optional[str]:
     return None
 
 
-def format_message(role_id: str, entry, mention: bool) -> dict:
+def format_message(
+    role_id: str,
+    entry,
+    mention: bool,
+    author_override: str | None = None,
+) -> dict:
     title = entry.get("title", "(untitled)").strip()
     link = entry.get("link", "").strip()
     role = f"<@&{role_id}> " if role_id and mention else ""
     summary = (entry.get("summary") or entry.get("description") or "").strip()
     author = (entry.get("author") or "").strip()
+    if author_override and str(author_override).strip():
+        author = str(author_override).strip()
     published = None
     published_parsed = entry.get("published_parsed")
     updated_parsed = entry.get("updated_parsed")
