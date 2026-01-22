@@ -12,6 +12,3 @@ configMapGenerator:
   - name: hytale-discord-bot
     files:
       - bot.py
-
-generatorOptions:
-  disableNameSuffixHash: true

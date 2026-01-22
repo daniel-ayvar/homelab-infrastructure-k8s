@@ -284,9 +284,9 @@ async def _update_presence_loop():
         if ready is True:
             count, error = await _get_players_summary()
             if count is not None:
-                text = f"Players: {count}"
+                text = f"Active players: {count}"
             else:
-                text = "Players: ?"
+                text = "Active players: ?"
         elif ready is False:
             text = "Server: offline"
         else:
