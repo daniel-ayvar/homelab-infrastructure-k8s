@@ -35,6 +35,9 @@ bot = RssDiscordBot(client)
 @client.event
 async def on_ready():
     logger.info("discord bot ready: %s", client.user)
+    await client.change_presence(
+        activity=discord.Game("Delivering thy daily news 📰")
+    )
     client.loop.create_task(bot.run_loop(POLL_SECONDS))
 
 
