@@ -12,6 +12,9 @@ spec:
       labels:
         app: rss-discord-bot
     spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       serviceAccountName: rss-discord-bot
       containers:
       - name: bot
