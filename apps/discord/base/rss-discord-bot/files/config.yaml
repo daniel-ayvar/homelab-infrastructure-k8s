@@ -1,0 +1,16 @@
+subscriptions:
+  - channel_id: "1462903423467913399"
+    role_id: "1463736365018513622"
+    feeds:
+      - rss_feed_url: "http://rss-parser-hytale:8082/rss.xml"
+        filter_regex: null
+  - channel_id: "1455927427443200104"
+    role_id: "1463735832019206174"
+    feeds:
+      - rss_feed_url: "http://rss-parser-pokemon-zone:8081/rss.xml"
+        filter_regex: null
+  - channel_id: "1333976000534413342"
+    role_id: "1463760905660530704"
+    feeds:
+      - rss_feed_url: "http://rss-parser-dokkaninfo:8083/rss.xml"
+        filter_regex: null

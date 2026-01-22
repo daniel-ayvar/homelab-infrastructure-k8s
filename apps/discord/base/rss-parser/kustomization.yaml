@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service-pokemon-zone.yaml
+  - service-hytale.yaml
+  - service-dokkaninfo.yaml
+
+configMapGenerator:
+  - name: rss-parser
+    files:
+      - files/config.yaml
+      - files/main.py
+      - files/config.py
+      - files/http_server.py
+      - files/parser_registry.py
+      - files/parser_dokkaninfo.py
+      - files/parser_hytale.py
+      - files/parser_placeholder.py
+      - files/parser_pokemon_zone.py
+      - files/parser_shared_utils.py
+
+generatorOptions:
+  disableNameSuffixHash: true

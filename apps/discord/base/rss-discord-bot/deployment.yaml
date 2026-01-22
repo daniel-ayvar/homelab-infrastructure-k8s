@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rss-discord-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rss-discord-bot
+  template:
+    metadata:
+      labels:
+        app: rss-discord-bot
+    spec:
+      serviceAccountName: rss-discord-bot
+      containers:
+      - name: bot
+        image: python:3.12-slim
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: DISCORD_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: rss-discord-bot
+              key: token
+        - name: RSS_CONFIG_PATH
+          value: /app/config.yaml
+        - name: RSS_STATE_PATH
+          value: /data/state.json
+        - name: RSS_POLL_SECONDS
+          value: "300"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: PIP_TARGET
+          value: /tmp/pip
+        - name: PYTHONPATH
+          value: /tmp/pip:/app
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -e
+            python -m pip install --no-cache-dir --target "${PIP_TARGET}" discord.py==2.4.0 feedparser==6.0.11 PyYAML==6.0.2
+            python /app/main.py
+        volumeMounts:
+        - name: bot-code
+          mountPath: /app
+          readOnly: true
+        - name: bot-state
+          mountPath: /data
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+      volumes:
+      - name: bot-code
+        configMap:
+          name: rss-discord-bot
+      - name: bot-state
+        persistentVolumeClaim:
+          claimName: rss-discord-bot-state-pvc

@@ -1,0 +1,7 @@
+feeds:
+  - name: pokemon-zone
+    port: 8081
+  - name: hytale
+    port: 8082
+  - name: dokkaninfo
+    port: 8083

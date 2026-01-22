@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rss-parser-hytale
+spec:
+  selector:
+    app: rss-parser
+  ports:
+    - name: rss
+      port: 8082
+      targetPort: hytale
