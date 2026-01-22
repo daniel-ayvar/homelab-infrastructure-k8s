@@ -638,9 +638,7 @@ async def actor_delete(interaction: discord.Interaction, name: str):
     await interaction.response.send_message(message, ephemeral=True)
 
 
-@tree.command(name="actor-context", description="Show the current actor context.")
-@app_commands.describe(name="Actor name")
-async def actor_context(interaction: discord.Interaction, name: str):
+async def _send_actor_context(interaction: discord.Interaction, name: str):
     if not isinstance(interaction.user, discord.Member):
         await interaction.response.send_message("Unable to validate permissions.", ephemeral=True)
         return
@@ -653,6 +651,21 @@ async def actor_context(interaction: discord.Interaction, name: str):
         return
     context = actor["context"]
     await interaction.response.send_message(f"```\n{context}\n```", ephemeral=True)
+
+
+@tree.command(name="actor-context", description="Show the current actor context.")
+@app_commands.describe(name="Actor name")
+async def actor_context(interaction: discord.Interaction, name: str):
+    await _send_actor_context(interaction, name)
+
+
+@tree.command(
+    name="actor-current-context",
+    description="Show the current actor context.",
+)
+@app_commands.describe(name="Actor name")
+async def actor_current_context(interaction: discord.Interaction, name: str):
+    await _send_actor_context(interaction, name)
 
 
 @discord_client.event
