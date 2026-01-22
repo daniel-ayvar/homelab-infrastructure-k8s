@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: actor-bot
+  template:
+    metadata:
+      labels:
+        app: actor-bot
+    spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      serviceAccountName: actor-bot
+      containers:
+      - name: bot
+        image: python:3.12-slim
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: DISCORD_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: actor-bot
+              key: token
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: actor-bot
+              key: openai_api_key
+        - name: OPENAI_MODEL
+          value: gpt-4o-mini
+        - name: ACTOR_MANAGER_ROLE
+          value: Actor Manager
+        - name: MAX_CONTEXT_TOKENS
+          value: "8000"
+        - name: MAX_HISTORY_MESSAGES
+          value: "25"
+        - name: MAX_HISTORY_AGE_SECONDS
+          value: "86400"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: PIP_TARGET
+          value: /tmp/pip
+        - name: PYTHONPATH
+          value: /tmp/pip:/app
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -e
+            python -m pip install --no-cache-dir --target "${PIP_TARGET}" discord.py==2.4.0 requests==2.32.3
+            python /app/bot.py
+        volumeMounts:
+        - name: bot-code
+          mountPath: /app
+          readOnly: true
+        - name: bot-data
+          mountPath: /data
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+      volumes:
+      - name: bot-code
+        configMap:
+          name: actor-bot
+      - name: bot-data
+        persistentVolumeClaim:
+          claimName: actor-bot-data-pvc

@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - rss-discord-bot
   - rss-parser
+  - actor-bot
 
 labels:
 - includeSelectors: true
