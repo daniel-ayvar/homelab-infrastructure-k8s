@@ -416,6 +416,24 @@ async def _load_reply_chain(
     return messages, token_budget
 
 
+async def _get_root_message(message: discord.Message) -> discord.Message:
+    current = message
+    depth = 0
+    while current.reference and depth < MAX_REPLY_CHAIN:
+        ref = current.reference
+        ref_message = ref.resolved
+        if ref_message is None and ref.message_id:
+            try:
+                ref_message = await current.channel.fetch_message(ref.message_id)
+            except Exception:
+                break
+        if not isinstance(ref_message, discord.Message):
+            break
+        current = ref_message
+        depth += 1
+    return current
+
+
 @tree.command(name="actor-register", description="Register a new actor.")
 @app_commands.describe(
     name="Actor name (mentionable)",
@@ -521,12 +539,20 @@ async def on_ready():
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-    if not message.role_mentions:
+    root_message = await _get_root_message(message)
+    root_role_ids = {role.id for role in root_message.role_mentions}
+    direct_role_ids = {role.id for role in message.role_mentions}
+    actor_role_ids = direct_role_ids or root_role_ids
+    if not actor_role_ids:
         return
 
     handled = False
-    for role in message.role_mentions:
-        actor = _fetch_actor_by_role(role.id)
+    seen_actors = set()
+    for role_id in actor_role_ids:
+        if role_id in seen_actors:
+            continue
+        seen_actors.add(role_id)
+        actor = _fetch_actor_by_role(role_id)
         if not actor:
             continue
         handled = True
