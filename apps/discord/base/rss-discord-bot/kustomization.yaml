@@ -17,6 +17,3 @@ configMapGenerator:
       - files/discord_handlers.py
       - files/rss.py
       - files/state.py
-
-generatorOptions:
-  disableNameSuffixHash: true

@@ -20,6 +20,3 @@ configMapGenerator:
       - files/parser_placeholder.py
       - files/parser_pokemon_zone.py
       - files/parser_shared_utils.py
-
-generatorOptions:
-  disableNameSuffixHash: true
