@@ -769,7 +769,7 @@ async def on_message(message: discord.Message):
             content = message.content.lower()
             if content:
                 for actor in _fetch_actors():
-                    trigger_words = (actor.get("trigger_words") or "").strip()
+                    trigger_words = (actor["trigger_words"] or "").strip()
                     if not trigger_words:
                         continue
                     for word in trigger_words.split():
@@ -793,7 +793,7 @@ async def on_message(message: discord.Message):
         _compact_history(actor["id"])
         system_prompt = _build_system_prompt(
             actor["context"],
-            actor.get("extended_context"),
+            actor["extended_context"],
         )
         messages = [{"role": "system", "content": system_prompt}]
         token_budget = MAX_CONTEXT_TOKENS
