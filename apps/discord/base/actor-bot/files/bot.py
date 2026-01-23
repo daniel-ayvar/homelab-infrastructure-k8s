@@ -174,6 +174,16 @@ def _truncate_block(text: str, limit: int) -> str:
     return f"{text[: max(0, limit - 1)].rstrip()}…"
 
 
+def _chunk_text(text: str, limit: int) -> List[str]:
+    chunks = []
+    remaining = text
+    while remaining:
+        chunk = remaining[:limit]
+        remaining = remaining[limit:]
+        chunks.append(chunk)
+    return chunks
+
+
 def _openai_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
     payload = {
         "model": OPENAI_MODEL,
@@ -860,7 +870,7 @@ async def actor_list(interaction: discord.Interaction):
                 [
                     f"**{actor['name']}**",
                     f"role `{actor['role_id']}`",
-                    f"avatar {actor['avatar_url'] or 'none'}",
+                    f"avatar <{actor['avatar_url'] or 'none'}>",
                 ]
             )
         )
@@ -900,12 +910,16 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
             f"**Avatar:** {actor['avatar_url'] or 'none'}",
             f"**Trigger words:** {actor['trigger_words'] or 'none'}",
             f"**Creator ID:** {creator_id or 'none'}",
-            "",
-            context_label,
-            f"```\n{payload}\n```",
         ]
     )
     await interaction.followup.send(info, ephemeral=True)
+    header = context_label
+    for idx, chunk in enumerate(_chunk_text(payload, 1800), start=1):
+        prefix = header if idx == 1 else "**Context (continued):**"
+        await interaction.followup.send(
+            f"{prefix}\n```\n{chunk}\n```",
+            ephemeral=True,
+        )
 
 
 @tree.command(name="actor-info", description="Show the actor configuration details.")
