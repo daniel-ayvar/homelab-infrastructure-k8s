@@ -30,6 +30,9 @@ MAX_REPLY_CHAIN = int(os.getenv("MAX_REPLY_CHAIN", "20"))
 MAX_SUMMARY_TOKENS = int(os.getenv("MAX_SUMMARY_TOKENS", "800"))
 SUMMARY_COMPACT_THRESHOLD = int(os.getenv("SUMMARY_COMPACT_THRESHOLD", "40"))
 SUMMARY_COMPACT_BATCH = int(os.getenv("SUMMARY_COMPACT_BATCH", "25"))
+BACKGROUND_WINDOW_SECONDS = int(os.getenv("BACKGROUND_WINDOW_SECONDS", "600"))
+BACKGROUND_MAX_MESSAGES = int(os.getenv("BACKGROUND_MAX_MESSAGES", "8"))
+BACKGROUND_MAX_CHARS = int(os.getenv("BACKGROUND_MAX_CHARS", "240"))
 DB_PATH = os.getenv("ACTOR_DB_PATH", "/data/actors.db")
 
 if not DISCORD_TOKEN or not OPENAI_API_KEY:
@@ -144,6 +147,13 @@ def _ts(dt: datetime) -> str:
 
 def _approx_tokens(text: str) -> int:
     return max(1, len(text) // 4)
+
+
+def _compact_text(text: str, limit: int) -> str:
+    cleaned = " ".join((text or "").split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[: max(0, limit - 1)].rstrip()}…"
 
 
 def _openai_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
@@ -596,6 +606,41 @@ async def _load_reply_chain(
     return messages, token_budget
 
 
+async def _load_background_context(
+    message: discord.Message,
+    token_budget: int,
+    seen: set,
+) -> Tuple[List[Dict[str, str]], int]:
+    cutoff = message.created_at - timedelta(seconds=BACKGROUND_WINDOW_SECONDS)
+    collected: List[Dict[str, str]] = []
+    try:
+        async for item in message.channel.history(
+            limit=BACKGROUND_MAX_MESSAGES * 3,
+            after=cutoff,
+            before=message.created_at,
+            oldest_first=True,
+        ):
+            if item.author.bot:
+                continue
+            content = _compact_text(item.content or "", BACKGROUND_MAX_CHARS)
+            if not content:
+                continue
+            line = f"[background] {item.author.display_name}: {content}"
+            if line in seen:
+                continue
+            tokens = _approx_tokens(line)
+            if tokens > token_budget:
+                break
+            token_budget -= tokens
+            seen.add(line)
+            collected.append({"role": "user", "content": line})
+            if len(collected) >= BACKGROUND_MAX_MESSAGES:
+                break
+    except Exception:
+        logger.exception("failed loading background context")
+    return collected, token_budget
+
+
 async def _get_root_message(message: discord.Message) -> discord.Message:
     current = message
     depth = 0
@@ -808,6 +853,11 @@ async def on_message(message: discord.Message):
         reply_context, token_budget = await _load_reply_chain(
             message, token_budget, seen
         )
+        background_context, token_budget = await _load_background_context(
+            message,
+            token_budget,
+            seen,
+        )
         saved_context = []
         if token_budget > 0:
             saved_context = _load_saved_context(actor["id"], token_budget, seen)
@@ -817,6 +867,14 @@ async def on_message(message: discord.Message):
             )
             messages.extend(reply_context)
             messages.extend(saved_context)
+        if background_context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "Background discussion (last 10 minutes, same channel):",
+                }
+            )
+            messages.extend(background_context)
         try:
             response, error = await asyncio.to_thread(_openai_chat, messages)
             if error == "insufficient_quota":
