@@ -762,9 +762,11 @@ async def _send_actor_context(interaction: discord.Interaction, name: str):
     if not _author_is_manager(interaction.user):
         await interaction.response.send_message("Missing Actor Manager role.", ephemeral=True)
         return
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
     actor = _fetch_actor_by_name(name)
     if not actor:
-        await interaction.response.send_message("Actor not found.", ephemeral=True)
+        await interaction.followup.send("Actor not found.", ephemeral=True)
         return
     context = actor["context"]
     extended_context = actor["extended_context"]
@@ -772,7 +774,7 @@ async def _send_actor_context(interaction: discord.Interaction, name: str):
         payload = f"{context}\n\nExtended context:\n{extended_context}"
     else:
         payload = context
-    await interaction.response.send_message(f"```\n{payload}\n```", ephemeral=True)
+    await interaction.followup.send(f"```\n{payload}\n```", ephemeral=True)
 
 
 @tree.command(name="actor-context", description="Show the current actor context.")
