@@ -168,6 +168,12 @@ def _compact_text(text: str, limit: int) -> str:
     return f"{cleaned[: max(0, limit - 1)].rstrip()}…"
 
 
+def _truncate_block(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 1)].rstrip()}…"
+
+
 def _openai_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
     payload = {
         "model": OPENAI_MODEL,
@@ -850,16 +856,16 @@ async def actor_list(interaction: discord.Interaction):
     lines = []
     for actor in rows:
         lines.append(
-            " | ".join(
+            " • ".join(
                 [
-                    f"{actor['name']}",
-                    f"role={actor['role_id']}",
-                    f"avatar={actor['avatar_url'] or 'none'}",
+                    f"**{actor['name']}**",
+                    f"role `{actor['role_id']}`",
+                    f"avatar {actor['avatar_url'] or 'none'}",
                 ]
             )
         )
     payload = "\n".join(lines)
-    await interaction.followup.send(f"```\n{payload}\n```", ephemeral=True)
+    await interaction.followup.send(f"**Actors**\n{payload}", ephemeral=True)
 
 
 async def _send_actor_info(interaction: discord.Interaction, name: str):
@@ -881,20 +887,25 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
         payload = f"{context}\n\nExtended context:\n{extended_context}"
     else:
         payload = context
+    truncated = False
+    if len(payload) > 1200:
+        payload = _truncate_block(payload, 1200)
+        truncated = True
     creator_id = actor["creator_id"] if "creator_id" in actor.keys() else None
+    context_label = "**Context (truncated):**" if truncated else "**Context:**"
     info = "\n".join(
         [
-            f"Name: {actor['name']}",
-            f"Role ID: {actor['role_id']}",
-            f"Avatar URL: {actor['avatar_url'] or 'none'}",
-            f"Trigger words: {actor['trigger_words'] or 'none'}",
-            f"Creator ID: {creator_id or 'none'}",
+            f"**Name:** {actor['name']}",
+            f"**Role ID:** {actor['role_id']}",
+            f"**Avatar:** {actor['avatar_url'] or 'none'}",
+            f"**Trigger words:** {actor['trigger_words'] or 'none'}",
+            f"**Creator ID:** {creator_id or 'none'}",
             "",
-            "Context:",
-            payload,
+            context_label,
+            f"```\n{payload}\n```",
         ]
     )
-    await interaction.followup.send(f"```\n{info}\n```", ephemeral=True)
+    await interaction.followup.send(info, ephemeral=True)
 
 
 @tree.command(name="actor-info", description="Show the actor configuration details.")
