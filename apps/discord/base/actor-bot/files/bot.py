@@ -22,6 +22,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 ACTOR_MANAGER_ROLE = os.getenv("ACTOR_MANAGER_ROLE", "Actor Manager")
 ACTOR_WEBHOOK_NAME = os.getenv("ACTOR_WEBHOOK_NAME", "actor-bot")
+DEFAULT_ACTOR_CREATOR_ID = "203395206622609408"
 MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "1200"))
 MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "25"))
 MAX_HISTORY_AGE_SECONDS = int(os.getenv("MAX_HISTORY_AGE_SECONDS", "86400"))
@@ -68,6 +69,7 @@ def _init_db():
                 avatar_url TEXT,
                 trigger_words TEXT,
                 extended_context TEXT,
+                creator_id TEXT,
                 summary TEXT,
                 summary_updated_at TEXT,
                 created_at TEXT NOT NULL,
@@ -131,10 +133,20 @@ def _init_db():
             conn.execute("ALTER TABLE actors ADD COLUMN trigger_words TEXT")
         if "extended_context" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN extended_context TEXT")
+        if "creator_id" not in columns:
+            conn.execute("ALTER TABLE actors ADD COLUMN creator_id TEXT")
         if "summary" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN summary TEXT")
         if "summary_updated_at" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN summary_updated_at TEXT")
+        conn.execute(
+            """
+            UPDATE actors
+            SET creator_id = ?
+            WHERE creator_id IS NULL OR creator_id = ''
+            """,
+            (DEFAULT_ACTOR_CREATOR_ID,),
+        )
 
 
 def _utc_now() -> datetime:
@@ -241,7 +253,7 @@ async def _get_or_create_actor_role(guild: discord.Guild, name: str) -> discord.
 
 
 async def _store_actor(name: str, role_id: str, context: str) -> Tuple[bool, str]:
-    return await _store_actor_full(name, role_id, context, None, None)
+    return await _store_actor_full(name, role_id, context, None, None, None)
 
 
 async def _store_actor_full(
@@ -250,6 +262,7 @@ async def _store_actor_full(
     context: str,
     trigger_words: Optional[str],
     extended_context: Optional[str],
+    creator_id: Optional[str],
 ) -> Tuple[bool, str]:
     async with db_lock:
         with _connect_db() as conn:
@@ -269,12 +282,23 @@ async def _store_actor_full(
                     avatar_url,
                     trigger_words,
                     extended_context,
+                    creator_id,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, role_id, context, None, trigger_words, extended_context, now, now),
+                (
+                    name,
+                    role_id,
+                    context,
+                    None,
+                    trigger_words,
+                    extended_context,
+                    creator_id,
+                    now,
+                    now,
+                ),
             )
             return True, "Actor registered."
 
@@ -395,6 +419,28 @@ def _fetch_actor_by_id(actor_id: int) -> Optional[sqlite3.Row]:
 def _fetch_actors() -> List[sqlite3.Row]:
     with _connect_db() as conn:
         return conn.execute("SELECT * FROM actors").fetchall()
+
+
+def _is_actor_owner(actor: sqlite3.Row, member: discord.Member) -> bool:
+    if "creator_id" not in actor.keys():
+        return False
+    return str(actor["creator_id"] or "") == str(member.id)
+
+
+async def _update_actor_creator(name: str, creator_id: str) -> Tuple[bool, str]:
+    async with db_lock:
+        with _connect_db() as conn:
+            row = conn.execute(
+                "SELECT id FROM actors WHERE name = ?",
+                (name,),
+            ).fetchone()
+            if not row:
+                return False, "Actor not found."
+            conn.execute(
+                "UPDATE actors SET creator_id = ?, updated_at = ? WHERE name = ?",
+                (creator_id, _ts(_utc_now()), name),
+            )
+            return True, "Actor ownership updated."
 
 
 def _store_message(actor_id: int, author: discord.User, content: str):
@@ -693,6 +739,7 @@ async def actor_register(
         context,
         trigger_words,
         extended_context,
+        str(interaction.user.id),
     )
     if ok and resolved_avatar:
         await _update_actor_context(
@@ -729,6 +776,13 @@ async def actor_update(
     if not _author_is_manager(interaction.user):
         await interaction.response.send_message("Missing Actor Manager role.", ephemeral=True)
         return
+    actor = _fetch_actor_by_name(name)
+    if not actor:
+        await interaction.response.send_message("Actor not found.", ephemeral=True)
+        return
+    if not _is_actor_owner(actor, interaction.user):
+        await interaction.response.send_message("Only the creator can update this actor.", ephemeral=True)
+        return
     resolved_avatar = _resolve_avatar_url(avatar_url, avatar)
     ok, message = await _update_actor_context(
         name,
@@ -737,6 +791,33 @@ async def actor_update(
         trigger_words=trigger_words,
         extended_context=extended_context,
     )
+    await interaction.response.send_message(message, ephemeral=True)
+
+
+@tree.command(name="actor-migrate", description="Transfer actor ownership.")
+@app_commands.describe(
+    name="Actor name",
+    owner="New owner",
+)
+async def actor_migrate(
+    interaction: discord.Interaction,
+    name: str,
+    owner: discord.Member,
+):
+    if not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Unable to validate permissions.", ephemeral=True)
+        return
+    if not _author_is_manager(interaction.user):
+        await interaction.response.send_message("Missing Actor Manager role.", ephemeral=True)
+        return
+    actor = _fetch_actor_by_name(name)
+    if not actor:
+        await interaction.response.send_message("Actor not found.", ephemeral=True)
+        return
+    if not _is_actor_owner(actor, interaction.user):
+        await interaction.response.send_message("Only the creator can migrate this actor.", ephemeral=True)
+        return
+    ok, message = await _update_actor_creator(name, str(owner.id))
     await interaction.response.send_message(message, ephemeral=True)
 
 
@@ -800,13 +881,14 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
         payload = f"{context}\n\nExtended context:\n{extended_context}"
     else:
         payload = context
+    creator_id = actor["creator_id"] if "creator_id" in actor.keys() else None
     info = "\n".join(
         [
             f"Name: {actor['name']}",
             f"Role ID: {actor['role_id']}",
             f"Avatar URL: {actor['avatar_url'] or 'none'}",
             f"Trigger words: {actor['trigger_words'] or 'none'}",
-            f"Creator ID: {actor['creator_id'] or 'none'}",
+            f"Creator ID: {creator_id or 'none'}",
             "",
             "Context:",
             payload,
