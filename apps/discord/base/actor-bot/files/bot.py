@@ -865,12 +865,14 @@ async def actor_list(interaction: discord.Interaction):
         return
     lines = []
     for actor in rows:
+        role_id = actor["role_id"]
+        role_mention = f"<@&{role_id}>" if role_id else "none"
         lines.append(
             " • ".join(
                 [
                     f"**{actor['name']}**",
-                    f"role `{actor['role_id']}`",
-                    f"avatar <{actor['avatar_url'] or 'none'}>",
+                    f"role {role_mention}",
+                    f"avatar {actor['avatar_url'] or 'none'}",
                 ]
             )
         )
@@ -902,17 +904,25 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
         payload = _truncate_block(payload, 1200)
         truncated = True
     creator_id = actor["creator_id"] if "creator_id" in actor.keys() else None
+    creator_mention = f"<@{creator_id}>" if creator_id else "none"
+    role_id = actor["role_id"]
+    role_mention = f"<@&{role_id}>" if role_id else "none"
     context_label = "**Context (truncated):**" if truncated else "**Context:**"
     info = "\n".join(
         [
             f"**Name:** {actor['name']}",
-            f"**Role ID:** {actor['role_id']}",
+            f"**Role:** {role_mention}",
             f"**Avatar:** {actor['avatar_url'] or 'none'}",
             f"**Trigger words:** {actor['trigger_words'] or 'none'}",
-            f"**Creator ID:** {creator_id or 'none'}",
+            f"**Creator:** {creator_mention}",
         ]
     )
-    await interaction.followup.send(info, ephemeral=True)
+    if len(info) <= 1900:
+        await interaction.followup.send(info, ephemeral=True)
+    else:
+        for idx, chunk in enumerate(_chunk_text(info, 1900), start=1):
+            header = "**Actor Info (continued):**\n" if idx > 1 else ""
+            await interaction.followup.send(f"{header}{chunk}", ephemeral=True)
     header = context_label
     for idx, chunk in enumerate(_chunk_text(payload, 1800), start=1):
         prefix = header if idx == 1 else "**Context (continued):**"
