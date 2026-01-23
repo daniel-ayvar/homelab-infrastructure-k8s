@@ -808,9 +808,15 @@ async def on_message(message: discord.Message):
         reply_context, token_budget = await _load_reply_chain(
             message, token_budget, seen
         )
-        messages.extend(reply_context)
+        saved_context = []
         if token_budget > 0:
-            messages.extend(_load_saved_context(actor["id"], token_budget, seen))
+            saved_context = _load_saved_context(actor["id"], token_budget, seen)
+        if reply_context or saved_context:
+            messages.append(
+                {"role": "system", "content": "Prior messages (oldest to newest):"}
+            )
+            messages.extend(reply_context)
+            messages.extend(saved_context)
         try:
             response, error = await asyncio.to_thread(_openai_chat, messages)
             if error == "insufficient_quota":
