@@ -900,14 +900,11 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
     else:
         payload = context
     truncated = False
-    if len(payload) > 1200:
-        payload = _truncate_block(payload, 1200)
-        truncated = True
     creator_id = actor["creator_id"] if "creator_id" in actor.keys() else None
     creator_mention = f"<@{creator_id}>" if creator_id else "none"
     role_id = actor["role_id"]
     role_mention = f"<@&{role_id}>" if role_id else "none"
-    context_label = "**Context (truncated):**" if truncated else "**Context:**"
+    context_label = "**Context:**"
     info = "\n".join(
         [
             f"**Name:** {actor['name']}",
