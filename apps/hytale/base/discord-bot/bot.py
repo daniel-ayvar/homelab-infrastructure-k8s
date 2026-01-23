@@ -291,7 +291,7 @@ async def _update_presence_loop():
             text = "Server: offline"
         else:
             text = "Server: unknown"
-        text = f"{text} !ᵎʰʸᵗᵃˡᵉ"
+        text = f"{text} {PREFIX}"
         activity = discord.Activity(type=discord.ActivityType.playing, name=text)
         try:
             await discord_client.change_presence(activity=activity)
