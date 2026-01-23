@@ -620,8 +620,6 @@ async def _load_background_context(
             before=message.created_at,
             oldest_first=True,
         ):
-            if item.author.bot:
-                continue
             content = _compact_text(item.content or "", BACKGROUND_MAX_CHARS)
             if not content:
                 continue
