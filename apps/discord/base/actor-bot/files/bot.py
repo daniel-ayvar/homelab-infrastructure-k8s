@@ -753,7 +753,35 @@ async def actor_delete(interaction: discord.Interaction, name: str):
     await interaction.response.send_message(message, ephemeral=True)
 
 
-async def _send_actor_context(interaction: discord.Interaction, name: str):
+@tree.command(name="actor-list", description="List registered actors.")
+async def actor_list(interaction: discord.Interaction):
+    if not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Unable to validate permissions.", ephemeral=True)
+        return
+    if not _author_is_manager(interaction.user):
+        await interaction.response.send_message("Missing Actor Manager role.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    rows = _fetch_actors()
+    if not rows:
+        await interaction.followup.send("No actors registered.", ephemeral=True)
+        return
+    lines = []
+    for actor in rows:
+        lines.append(
+            " | ".join(
+                [
+                    f"{actor['name']}",
+                    f"role={actor['role_id']}",
+                    f"avatar={actor['avatar_url'] or 'none'}",
+                ]
+            )
+        )
+    payload = "\n".join(lines)
+    await interaction.followup.send(f"```\n{payload}\n```", ephemeral=True)
+
+
+async def _send_actor_info(interaction: discord.Interaction, name: str):
     if not isinstance(interaction.user, discord.Member):
         await interaction.response.send_message("Unable to validate permissions.", ephemeral=True)
         return
@@ -772,13 +800,25 @@ async def _send_actor_context(interaction: discord.Interaction, name: str):
         payload = f"{context}\n\nExtended context:\n{extended_context}"
     else:
         payload = context
-    await interaction.followup.send(f"```\n{payload}\n```", ephemeral=True)
+    info = "\n".join(
+        [
+            f"Name: {actor['name']}",
+            f"Role ID: {actor['role_id']}",
+            f"Avatar URL: {actor['avatar_url'] or 'none'}",
+            f"Trigger words: {actor['trigger_words'] or 'none'}",
+            f"Creator ID: {actor['creator_id'] or 'none'}",
+            "",
+            "Context:",
+            payload,
+        ]
+    )
+    await interaction.followup.send(f"```\n{info}\n```", ephemeral=True)
 
 
-@tree.command(name="actor-context", description="Show the current actor context.")
+@tree.command(name="actor-info", description="Show the actor configuration details.")
 @app_commands.describe(name="Actor name")
-async def actor_context(interaction: discord.Interaction, name: str):
-    await _send_actor_context(interaction, name)
+async def actor_info(interaction: discord.Interaction, name: str):
+    await _send_actor_info(interaction, name)
 
 
 @discord_client.event
@@ -819,11 +859,11 @@ async def on_message(message: discord.Message):
             content = message.content.lower()
             if content:
                 for actor in _fetch_actors():
-                    trigger_words = (actor["trigger_words"] or "").strip()
+                    trigger_words = (actor["trigger_words"] or "").strip().lower()
                     if not trigger_words:
                         continue
                     for word in trigger_words.split():
-                        if word.lower() in content:
+                        if word in content:
                             actor_ids.append(actor["id"])
                             break
     if not actor_ids:
