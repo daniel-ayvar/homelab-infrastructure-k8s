@@ -717,21 +717,17 @@ async def _send_actor_context(interaction: discord.Interaction, name: str):
         await interaction.response.send_message("Actor not found.", ephemeral=True)
         return
     context = actor["context"]
-    await interaction.response.send_message(f"```\n{context}\n```", ephemeral=True)
+    extended_context = actor["extended_context"]
+    if extended_context:
+        payload = f"{context}\n\nExtended context:\n{extended_context}"
+    else:
+        payload = context
+    await interaction.response.send_message(f"```\n{payload}\n```", ephemeral=True)
 
 
 @tree.command(name="actor-context", description="Show the current actor context.")
 @app_commands.describe(name="Actor name")
 async def actor_context(interaction: discord.Interaction, name: str):
-    await _send_actor_context(interaction, name)
-
-
-@tree.command(
-    name="actor-current-context",
-    description="Show the current actor context.",
-)
-@app_commands.describe(name="Actor name")
-async def actor_current_context(interaction: discord.Interaction, name: str):
     await _send_actor_context(interaction, name)
 
 
