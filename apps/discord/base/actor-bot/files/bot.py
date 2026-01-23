@@ -271,7 +271,7 @@ async def _store_actor_full(
 
 async def _update_actor_context(
     name: str,
-    context: str,
+    context: Optional[str],
     avatar_url: Optional[str],
     trigger_words: Optional[str] = None,
     extended_context: Optional[str] = None,
@@ -284,8 +284,11 @@ async def _update_actor_context(
             ).fetchone()
             if not row:
                 return False, "Actor not found."
-            updates = ["context = ?", "updated_at = ?"]
-            values = [context, _ts(_utc_now())]
+            updates = ["updated_at = ?"]
+            values = [_ts(_utc_now())]
+            if context is not None:
+                updates.append("context = ?")
+                values.append(context)
             if avatar_url is not None:
                 updates.append("avatar_url = ?")
                 values.append(avatar_url)
@@ -295,6 +298,8 @@ async def _update_actor_context(
             if extended_context is not None:
                 updates.append("extended_context = ?")
                 values.append(extended_context)
+            if len(updates) == 1:
+                return False, "No updates provided."
             values.append(name)
             conn.execute(
                 f"UPDATE actors SET {', '.join(updates)} WHERE name = ?",
@@ -669,7 +674,7 @@ async def actor_register(
 async def actor_update(
     interaction: discord.Interaction,
     name: str,
-    context: str,
+    context: Optional[str] = None,
     trigger_words: Optional[str] = None,
     extended_context: Optional[str] = None,
     avatar_url: Optional[str] = None,
