@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -19,6 +20,7 @@ FEATURED_DATE_SELECTOR = ".banner-date__dates"
 FEATURED_INTRO_SELECTOR = ".featured-article-preview__intro"
 FEATURED_CATEGORY_SELECTOR = ".article-callout-category"
 FEATURED_AUTHOR_SELECTOR = ".featured-article-preview__meta-item"
+logger = logging.getLogger("rss-parser")
 
 
 def _to_rfc822(date_text: str) -> str:
@@ -49,7 +51,7 @@ def _parse_index(html: str, base_url: str) -> List[Dict]:
         url = to_absolute(base_url, link.get("href", ""))
         if not url.startswith(base_url):
             continue
-        if not re.search(r"/(events|decks|news)/", url):
+        if not re.search(r"/(events|decks|news|sets)/", url):
             continue
         if url in seen:
             continue
@@ -98,7 +100,7 @@ def _parse_index(html: str, base_url: str) -> List[Dict]:
         url = to_absolute(base_url, link["href"])
         if not url.startswith(base_url):
             continue
-        if not re.search(r"/(events|decks|news)/", url):
+        if not re.search(r"/(events|decks|news|sets)/", url):
             continue
         title = link.get_text(strip=True)
         if len(title) < 6:
@@ -200,11 +202,14 @@ def build_items(feed: dict, parser: dict):
     index_url = parser.get("index_url") or base_url
     html = fetch_html(index_url, timeout=12, user_agent=None)
     stubs = _parse_index(html, base_url)
+    if not stubs:
+        logger.warning("pokemon-zone: no stubs found on index")
     items = []
     for stub in stubs:
         try:
             detail_html = fetch_html(stub["url"], timeout=12, user_agent=None)
             items.append(_parse_detail(detail_html, stub))
         except Exception:
+            logger.exception("pokemon-zone: failed to parse detail url=%s", stub.get("url"))
             items.append(_build_item_from_stub(stub))
     return items

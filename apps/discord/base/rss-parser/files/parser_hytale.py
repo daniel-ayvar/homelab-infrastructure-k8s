@@ -1,3 +1,5 @@
+import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -15,6 +17,8 @@ DATETIME_RE = re.compile(
     r"\b([A-Za-z]{3})\s+([A-Za-z]{3})\s+(\d{1,2})\s+(20\d{2})\s+(\d{2}):(\d{2}):(\d{2})\s+GMT([+-]\d{4})"
 )
 POST_CARD_SELECTOR = ".postWrapper .post"
+STATE_KEY = "window.__INITIAL_COMPONENTS_STATE__ ="
+logger = logging.getLogger("rss-parser")
 
 
 def _parse_index_date(text: str) -> Optional[datetime]:
@@ -65,87 +69,73 @@ def _clean_excerpt(text: str, title: str, author: Optional[str]) -> Optional[str
     return excerpt if len(excerpt) >= 20 else None
 
 
+def _extract_state_posts(html: str) -> List[dict]:
+    start = html.find(STATE_KEY)
+    if start == -1:
+        logger.warning("hytale: embedded state not found")
+        return []
+    end = html.find("window.cdnBaseURL", start)
+    if end == -1:
+        logger.warning("hytale: embedded state truncated before cdnBaseURL")
+        return []
+    payload = html[start + len(STATE_KEY):end].strip().rstrip(";")
+    try:
+        state = json.loads(payload)
+    except json.JSONDecodeError:
+        logger.exception("hytale: failed to decode embedded state JSON")
+        return []
+    if not state:
+        logger.warning("hytale: embedded state empty")
+        return []
+    posts = state[0].get("posts", [])
+    return posts if isinstance(posts, list) else []
+
+
+def _parse_published_at(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def build_items(feed: dict, parser: dict) -> List[dict]:
     index_url = parser.get("index_url") or INDEX_URL
     html = fetch_html(index_url)
-    soup = BeautifulSoup(html, "html.parser")
-    cards = soup.select(POST_CARD_SELECTOR)
-    if cards:
+    posts = _extract_state_posts(html)
+    if posts:
         items = []
-        seen = set()
         now = datetime.now(timezone.utc)
-        for card in cards:
-            href = card.get("href", "")
-            if "/news/" not in href:
+        for post in posts:
+            slug = post.get("slug")
+            if not slug:
                 continue
-            url = urljoin(BASE_URL, href)
-            if url in seen:
-                continue
-            seen.add(url)
-            title_tag = card.select_one(".post__details__heading")
-            title = title_tag.get_text(" ", strip=True) if title_tag else url
-            body_tag = card.select_one(".post__details__body")
-            excerpt = body_tag.get_text(" ", strip=True) if body_tag else None
-            img_tag = card.select_one("img")
-            image_url = img_tag.get("src") if img_tag else None
-            meta_author = card.select_one(".post__details__meta__author")
-            author_text = (
-                meta_author.get_text(" ", strip=True) if meta_author else ""
-            )
-            author = _extract_posted_by(author_text) or author_text.replace(
-                "Posted by", ""
-            ).strip()
-            time_tag = card.select_one("time[datetime]")
-            time_attr = time_tag.get("datetime", "") if time_tag else ""
-            date_dt = _parse_datetime_attr(time_attr)
-            if not date_dt and time_tag:
-                date_dt = _parse_index_date(time_tag.get_text(" ", strip=True))
+            published_at = _parse_published_at(post.get("publishedAt"))
+            url = urljoin(BASE_URL, f"/news/{slug}")
             items.append(
-                {
-                    "title": title,
-                    "link": url,
-                    "guid": url,
-                    "pubDate": to_rfc822(date_dt or now),
-                    "author": author or None,
-                    "description": excerpt,
-                    "image": {"url": image_url} if image_url else None,
-                }
+                (
+                    published_at or now,
+                    {
+                        "title": post.get("title") or slug,
+                        "link": url,
+                        "guid": url,
+                        "pubDate": to_rfc822(published_at or now),
+                        "author": post.get("author") or None,
+                        "description": post.get("bodyExcerpt") or None,
+                        "image": {
+                            "url": urljoin(
+                                "https://cdn.hytale.com/",
+                                post.get("coverImage", {}).get("s3Key", ""),
+                            )
+                        }
+                        if post.get("coverImage", {}).get("s3Key")
+                        else None,
+                    },
+                )
             )
-        return items
-    candidates = []
-    for link in soup.find_all("a", href=True):
-        href = link["href"]
-        if "/news/" not in href:
-            continue
-        url = urljoin(BASE_URL, href)
-        if not re.search(r"/news/\d{4}/\d{1,2}/", url):
-            continue
-        title = link.get_text(" ", strip=True)
-        if not title or len(title) < 6:
-            continue
-        parent = link.parent
-        container_text = parent.get_text(" ", strip=True) if parent else title
-        container_text = re.sub(r"\s+", " ", container_text).strip()
-        author = _extract_posted_by(container_text)
-        date_dt = _parse_index_date(container_text)
-        excerpt = _clean_excerpt(container_text, title, author)
-        candidates.append((url, title, author, date_dt, excerpt))
-    seen = set()
-    items = []
-    now = datetime.now(timezone.utc)
-    for url, title, author, date_dt, excerpt in candidates:
-        if url in seen:
-            continue
-        seen.add(url)
-        pub_dt = date_dt or now
-        items.append(
-            {
-                "title": title,
-                "link": url,
-                "guid": url,
-                "pubDate": to_rfc822(pub_dt),
-                "author": author,
-                "description": excerpt,
-            }
-        )
-    return items
+        items.sort(key=lambda item: item[0], reverse=True)
+        return [item for _, item in items[:20]]
+
+    logger.warning("hytale: no posts found in embedded state")
+    return []

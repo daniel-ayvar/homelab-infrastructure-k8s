@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -25,6 +26,7 @@ TIMEZONE_OFFSETS = {
     "PST": -8,
     "PDT": -7,
 }
+logger = logging.getLogger("rss-parser")
 
 
 def _is_same_domain(url: str) -> bool:
@@ -291,6 +293,8 @@ def _build_item_from_stub(stub: Dict) -> Dict:
 def _build_items_from_api(max_items: int) -> List[Dict]:
     html = fetch_html(API_URL)
     payload = json.loads(html)
+    if not payload.get("data"):
+        logger.warning("dokkaninfo: api returned no data")
     items = []
     for entry in payload.get("data", [])[:max_items]:
         entry_id = entry.get("id")
@@ -323,15 +327,18 @@ def build_items(feed: dict, parser: dict) -> List[dict]:
     try:
         return _build_items_from_api(max_items)
     except Exception:
-        pass
+        logger.exception("dokkaninfo: api fetch failed, falling back to HTML")
     index_url = parser.get("index_url") or INDEX_URL
     html = fetch_html(index_url)
     stubs = _parse_index(html, max_items)
+    if not stubs:
+        logger.warning("dokkaninfo: no stubs found on index")
     items = []
     for stub in stubs:
         try:
             detail_html = fetch_html(stub["url"])
             items.append(_parse_detail(detail_html, stub["url"], stub))
         except Exception:
+            logger.exception("dokkaninfo: failed to parse detail url=%s", stub.get("url"))
             items.append(_build_item_from_stub(stub))
     return items
