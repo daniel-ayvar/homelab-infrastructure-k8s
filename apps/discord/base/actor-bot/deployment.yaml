@@ -35,6 +35,8 @@ spec:
           value: gpt-4o-mini
         - name: ACTOR_MANAGER_ROLE
           value: Actor Manager
+        - name: DISCORD_GUILD_ID
+          value: "940799942354669658"
         - name: MAX_CONTEXT_TOKENS
           value: "8000"
         - name: MAX_HISTORY_MESSAGES

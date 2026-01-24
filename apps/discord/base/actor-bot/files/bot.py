@@ -22,6 +22,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 ACTOR_MANAGER_ROLE = os.getenv("ACTOR_MANAGER_ROLE", "Actor Manager")
 ACTOR_WEBHOOK_NAME = os.getenv("ACTOR_WEBHOOK_NAME", "actor-bot")
+DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")
 DEFAULT_ACTOR_CREATOR_ID = "203395206622609408"
 MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "1200"))
 MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "25"))
@@ -1073,7 +1074,11 @@ async def on_ready():
         except Exception:
             logger.exception("failed ensuring manager role for guild=%s", guild.id)
     try:
-        await tree.sync()
+        if DISCORD_GUILD_ID:
+            await tree.sync(guild=discord.Object(id=int(DISCORD_GUILD_ID)))
+            logger.info("synced commands to guild=%s", DISCORD_GUILD_ID)
+        else:
+            await tree.sync()
     except Exception:
         logger.exception("failed to sync commands")
 
