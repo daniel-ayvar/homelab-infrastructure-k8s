@@ -34,6 +34,7 @@ SUMMARY_COMPACT_BATCH = int(os.getenv("SUMMARY_COMPACT_BATCH", "25"))
 BACKGROUND_WINDOW_SECONDS = int(os.getenv("BACKGROUND_WINDOW_SECONDS", "600"))
 BACKGROUND_MAX_MESSAGES = int(os.getenv("BACKGROUND_MAX_MESSAGES", "8"))
 BACKGROUND_MAX_CHARS = int(os.getenv("BACKGROUND_MAX_CHARS", "240"))
+MAX_EMOJI_REACTIONS = int(os.getenv("MAX_EMOJI_REACTIONS", "3"))
 DB_PATH = os.getenv("ACTOR_DB_PATH", "/data/actors.db")
 
 if not DISCORD_TOKEN or not OPENAI_API_KEY:
@@ -69,6 +70,8 @@ def _init_db():
                 avatar_url TEXT,
                 trigger_words TEXT,
                 extended_context TEXT,
+                emoji_trigger_words TEXT,
+                emoji_context TEXT,
                 creator_id TEXT,
                 summary TEXT,
                 summary_updated_at TEXT,
@@ -133,6 +136,10 @@ def _init_db():
             conn.execute("ALTER TABLE actors ADD COLUMN trigger_words TEXT")
         if "extended_context" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN extended_context TEXT")
+        if "emoji_trigger_words" not in columns:
+            conn.execute("ALTER TABLE actors ADD COLUMN emoji_trigger_words TEXT")
+        if "emoji_context" not in columns:
+            conn.execute("ALTER TABLE actors ADD COLUMN emoji_context TEXT")
         if "creator_id" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN creator_id TEXT")
         if "summary" not in columns:
@@ -249,6 +256,18 @@ def _build_system_prompt(context: str, extended_context: Optional[str]) -> str:
     )
 
 
+def _build_emoji_system_prompt(emoji_context: str) -> str:
+    return (
+        "You are selecting emoji reactions for a Discord message. "
+        "Use the emoji context to choose suitable reactions. "
+        "Return only JSON: a list of objects with keys "
+        '"emoji" and optional "reason". '
+        "Example: [{\"emoji\": \"😀\", \"reason\": \"happy\"}]. "
+        "Do not include any extra text."
+        f"\n\nEmoji context:\n{emoji_context}"
+    )
+
+
 async def _ensure_manager_role(guild: discord.Guild) -> discord.Role:
     for role in guild.roles:
         if role.name == ACTOR_MANAGER_ROLE:
@@ -269,7 +288,7 @@ async def _get_or_create_actor_role(guild: discord.Guild, name: str) -> discord.
 
 
 async def _store_actor(name: str, role_id: str, context: str) -> Tuple[bool, str]:
-    return await _store_actor_full(name, role_id, context, None, None, None)
+    return await _store_actor_full(name, role_id, context, None, None, None, None, None)
 
 
 async def _store_actor_full(
@@ -278,6 +297,8 @@ async def _store_actor_full(
     context: str,
     trigger_words: Optional[str],
     extended_context: Optional[str],
+    emoji_trigger_words: Optional[str],
+    emoji_context: Optional[str],
     creator_id: Optional[str],
 ) -> Tuple[bool, str]:
     async with db_lock:
@@ -298,11 +319,13 @@ async def _store_actor_full(
                     avatar_url,
                     trigger_words,
                     extended_context,
+                    emoji_trigger_words,
+                    emoji_context,
                     creator_id,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
@@ -311,6 +334,8 @@ async def _store_actor_full(
                     None,
                     trigger_words,
                     extended_context,
+                    emoji_trigger_words,
+                    emoji_context,
                     creator_id,
                     now,
                     now,
@@ -325,6 +350,8 @@ async def _update_actor_context(
     avatar_url: Optional[str],
     trigger_words: Optional[str] = None,
     extended_context: Optional[str] = None,
+    emoji_trigger_words: Optional[str] = None,
+    emoji_context: Optional[str] = None,
 ) -> Tuple[bool, str]:
     async with db_lock:
         with _connect_db() as conn:
@@ -348,6 +375,12 @@ async def _update_actor_context(
             if extended_context is not None:
                 updates.append("extended_context = ?")
                 values.append(extended_context)
+            if emoji_trigger_words is not None:
+                updates.append("emoji_trigger_words = ?")
+                values.append(emoji_trigger_words)
+            if emoji_context is not None:
+                updates.append("emoji_context = ?")
+                values.append(emoji_context)
             if len(updates) == 1:
                 return False, "No updates provided."
             values.append(name)
@@ -539,6 +572,65 @@ def _compact_history(actor_id: int):
             ids,
         )
 
+
+def _emoji_trigger_match(content: str, trigger_words: Optional[str]) -> bool:
+    if not content or not trigger_words:
+        return False
+    lowered = content.lower()
+    for word in trigger_words.strip().lower().split():
+        if word and word in lowered:
+            return True
+    return False
+
+
+def _parse_emoji_reactions(payload: str) -> List[str]:
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    emojis: List[str] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        emoji = item.get("emoji")
+        if isinstance(emoji, str) and emoji.strip():
+            emojis.append(emoji.strip())
+        if len(emojis) >= MAX_EMOJI_REACTIONS:
+            break
+    return emojis
+
+
+async def _generate_emoji_reactions(
+    emoji_context: str,
+    message: discord.Message,
+) -> List[str]:
+    prompt = _build_emoji_system_prompt(emoji_context)
+    user_content = (
+        f"Message from {message.author.display_name}:\n{message.content or ''}"
+    )
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": user_content},
+    ]
+    response, error = await asyncio.to_thread(_openai_chat, messages)
+    if error == "insufficient_quota":
+        return []
+    return _parse_emoji_reactions(response)
+
+
+async def _apply_emoji_reactions(message: discord.Message, emojis: List[str]):
+    seen = set()
+    for emoji in emojis[:MAX_EMOJI_REACTIONS]:
+        if emoji in seen:
+            continue
+        seen.add(emoji)
+        try:
+            await message.add_reaction(emoji)
+        except Exception:
+            logger.exception("failed to add reaction emoji=%s", emoji)
+
 def _store_response_link(actor_id: int, message_id: int):
     with _connect_db() as conn:
         conn.execute(
@@ -725,6 +817,8 @@ async def _get_root_message(message: discord.Message) -> discord.Message:
     context="Actor context block",
     trigger_words="Optional trigger words (space-separated).",
     extended_context="Optional extended context block.",
+    emoji_trigger_words="Optional emoji trigger words (space-separated).",
+    emoji_context="Optional emoji context block.",
     avatar_url="Optional image URL for the actor avatar",
     avatar="Optional image attachment for the actor avatar",
 )
@@ -734,6 +828,8 @@ async def actor_register(
     context: str,
     trigger_words: Optional[str] = None,
     extended_context: Optional[str] = None,
+    emoji_trigger_words: Optional[str] = None,
+    emoji_context: Optional[str] = None,
     avatar_url: Optional[str] = None,
     avatar: Optional[discord.Attachment] = None,
 ):
@@ -755,6 +851,8 @@ async def actor_register(
         context,
         trigger_words,
         extended_context,
+        emoji_trigger_words,
+        emoji_context,
         str(interaction.user.id),
     )
     if ok and resolved_avatar:
@@ -764,6 +862,8 @@ async def actor_register(
             resolved_avatar,
             trigger_words=trigger_words,
             extended_context=extended_context,
+            emoji_trigger_words=emoji_trigger_words,
+            emoji_context=emoji_context,
         )
     await interaction.response.send_message(message, ephemeral=True)
 
@@ -774,6 +874,8 @@ async def actor_register(
     context="New context block",
     trigger_words="Optional trigger words (space-separated).",
     extended_context="Optional extended context block.",
+    emoji_trigger_words="Optional emoji trigger words (space-separated).",
+    emoji_context="Optional emoji context block.",
     avatar_url="Optional image URL for the actor avatar",
     avatar="Optional image attachment for the actor avatar",
 )
@@ -783,6 +885,8 @@ async def actor_update(
     context: Optional[str] = None,
     trigger_words: Optional[str] = None,
     extended_context: Optional[str] = None,
+    emoji_trigger_words: Optional[str] = None,
+    emoji_context: Optional[str] = None,
     avatar_url: Optional[str] = None,
     avatar: Optional[discord.Attachment] = None,
 ):
@@ -806,6 +910,8 @@ async def actor_update(
         resolved_avatar,
         trigger_words=trigger_words,
         extended_context=extended_context,
+        emoji_trigger_words=emoji_trigger_words,
+        emoji_context=emoji_context,
     )
     await interaction.response.send_message(message, ephemeral=True)
 
@@ -911,6 +1017,7 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
             f"**Role:** {role_mention}",
             f"**Avatar:** {actor['avatar_url'] or 'none'}",
             f"**Trigger words:** {actor['trigger_words'] or 'none'}",
+            f"**Emoji trigger words:** {actor['emoji_trigger_words'] or 'none'}",
             f"**Creator:** {creator_mention}",
         ]
     )
@@ -927,6 +1034,14 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
             f"{prefix}\n```\n{chunk}\n```",
             ephemeral=True,
         )
+    emoji_context = actor["emoji_context"]
+    if emoji_context:
+        for idx, chunk in enumerate(_chunk_text(emoji_context, 1800), start=1):
+            prefix = "**Emoji context:**" if idx == 1 else "**Emoji context (continued):**"
+            await interaction.followup.send(
+                f"{prefix}\n```\n{chunk}\n```",
+                ephemeral=True,
+            )
 
 
 @tree.command(name="actor-info", description="Show the actor configuration details.")
@@ -953,6 +1068,12 @@ async def on_ready():
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
+    emoji_actor_ids: List[int] = []
+    content = (message.content or "").lower()
+    if content:
+        for actor in _fetch_actors():
+            if _emoji_trigger_match(content, actor["emoji_trigger_words"]):
+                emoji_actor_ids.append(actor["id"])
     actor_ids: List[int] = []
     if message.reference and message.reference.message_id:
         linked_actor_id = _lookup_response_actor(message.reference.message_id)
@@ -970,14 +1091,13 @@ async def on_message(message: discord.Message):
                 if actor:
                     actor_ids.append(actor["id"])
         else:
-            content = message.content.lower()
             if content:
                 for actor in _fetch_actors():
                     trigger_words = (actor["trigger_words"] or "").strip().lower()
                     if not trigger_words:
                         continue
                     for word in trigger_words.split():
-                        if word in content:
+                        if word and word in content:
                             actor_ids.append(actor["id"])
                             break
     if not actor_ids:
@@ -1113,6 +1233,30 @@ async def on_message(message: discord.Message):
             )
             reply_msg = await message.reply("Error: request failed.")
             _store_response_link(actor["id"], reply_msg.id)
+
+    if emoji_actor_ids:
+        seen_emoji_actors = set()
+        for actor_id in emoji_actor_ids:
+            if actor_id in seen_emoji_actors:
+                continue
+            seen_emoji_actors.add(actor_id)
+            actor = _fetch_actor_by_id(actor_id)
+            if not actor:
+                continue
+            emoji_context = actor["emoji_context"]
+            if not emoji_context:
+                continue
+            try:
+                emojis = await _generate_emoji_reactions(emoji_context, message)
+                if emojis:
+                    await _apply_emoji_reactions(message, emojis)
+            except Exception:
+                logger.exception(
+                    "emoji reaction failed actor=%s channel=%s author=%s",
+                    actor["name"],
+                    message.channel.id,
+                    message.author.id,
+                )
     if handled:
         return
 
