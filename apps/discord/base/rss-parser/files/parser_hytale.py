@@ -100,6 +100,19 @@ def _parse_published_at(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
+def _resolve_post_url(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    raw = value.strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    if raw.startswith("/"):
+        return urljoin(BASE_URL, raw)
+    if raw.startswith("news/"):
+        return urljoin(BASE_URL, f"/{raw}")
+    return urljoin(BASE_URL, f"/news/{raw}")
+
+
 def build_items(feed: dict, parser: dict) -> List[dict]:
     index_url = parser.get("index_url") or INDEX_URL
     html = fetch_html(index_url)
@@ -109,15 +122,18 @@ def build_items(feed: dict, parser: dict) -> List[dict]:
         now = datetime.now(timezone.utc)
         for post in posts:
             slug = post.get("slug")
-            if not slug:
+            link_value = post.get("url") or post.get("path") or slug
+            url = _resolve_post_url(link_value)
+            if not slug and not url:
                 continue
             published_at = _parse_published_at(post.get("publishedAt"))
-            url = urljoin(BASE_URL, f"/news/{slug}")
+            if not url:
+                continue
             items.append(
                 (
                     published_at or now,
                     {
-                        "title": post.get("title") or slug,
+                        "title": post.get("title") or slug or url,
                         "link": url,
                         "guid": url,
                         "pubDate": to_rfc822(published_at or now),
