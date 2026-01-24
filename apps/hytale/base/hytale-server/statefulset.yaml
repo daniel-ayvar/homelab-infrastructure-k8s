@@ -90,23 +90,37 @@ spec:
         args:
           - |
             set -e
-            SRC_DIR="/home/container"
-            DEST_DIR="/mnt/data"
-            if [ ! -f "$SRC_DIR/Assets.zip" ] && [ -f "/home/container/game/Assets.zip" ]; then
-              SRC_DIR="/home/container/game"
-              DEST_DIR="/mnt/data/game"
-            fi
-            mkdir -p "$DEST_DIR"
-            if [ ! -f "$SRC_DIR/Assets.zip" ] || { [ ! -f "$SRC_DIR/HytaleServer.jar" ] && [ ! -f "$SRC_DIR/Server" ]; }; then
-              echo "Missing bundled server files in image ($SRC_DIR)." >&2
+            SRC_BASE="/home/container"
+            SRC_GAME="$SRC_BASE/game"
+            DEST_BASE="/mnt/data"
+            DEST_GAME="$DEST_BASE/game"
+            DEST_SERVER="$DEST_GAME/Server"
+            mkdir -p "$DEST_SERVER"
+
+            if [ -f "$SRC_BASE/Assets.zip" ]; then
+              cp -f "$SRC_BASE/Assets.zip" "$DEST_GAME/Assets.zip"
+            elif [ -f "$SRC_GAME/Assets.zip" ]; then
+              cp -f "$SRC_GAME/Assets.zip" "$DEST_GAME/Assets.zip"
+            else
+              echo "Missing bundled Assets.zip in image." >&2
               exit 1
             fi
-            cp -f "$SRC_DIR/Assets.zip" "$DEST_DIR/"
-            if [ -f "$SRC_DIR/HytaleServer.jar" ]; then
-              cp -f "$SRC_DIR/HytaleServer.jar" "$DEST_DIR/"
+
+            if [ -f "$SRC_BASE/HytaleServer.jar" ]; then
+              cp -f "$SRC_BASE/HytaleServer.jar" "$DEST_SERVER/HytaleServer.jar"
+            elif [ -f "$SRC_GAME/Server/HytaleServer.jar" ]; then
+              cp -f "$SRC_GAME/Server/HytaleServer.jar" "$DEST_SERVER/HytaleServer.jar"
+            elif [ -f "$SRC_GAME/HytaleServer.jar" ]; then
+              cp -f "$SRC_GAME/HytaleServer.jar" "$DEST_SERVER/HytaleServer.jar"
+            else
+              echo "Missing bundled HytaleServer.jar in image." >&2
+              exit 1
             fi
-            if [ -f "$SRC_DIR/Server" ]; then
-              cp -f "$SRC_DIR/Server" "$DEST_DIR/"
+
+            if [ -f "$SRC_BASE/Server" ]; then
+              cp -f "$SRC_BASE/Server" "$DEST_SERVER/Server"
+            elif [ -f "$SRC_GAME/Server" ]; then
+              cp -f "$SRC_GAME/Server" "$DEST_SERVER/Server"
             fi
         volumeMounts:
         - mountPath: /mnt/data
