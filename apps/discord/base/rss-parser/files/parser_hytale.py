@@ -113,9 +113,31 @@ def _resolve_post_url(value: Optional[str]) -> Optional[str]:
     return urljoin(BASE_URL, f"/news/{raw}")
 
 
+def _slug_from_url(url: str) -> Optional[str]:
+    parts = [part for part in url.split("/") if part]
+    if not parts:
+        return None
+    return parts[-1]
+
+
+def _extract_html_links(html: str) -> dict:
+    soup = BeautifulSoup(html, "html.parser")
+    links = {}
+    for card in soup.select(POST_CARD_SELECTOR):
+        href = card.get("href", "")
+        if not href or "/news/" not in href:
+            continue
+        url = urljoin(BASE_URL, href)
+        slug = _slug_from_url(url)
+        if slug:
+            links[slug] = url
+    return links
+
+
 def build_items(feed: dict, parser: dict) -> List[dict]:
     index_url = parser.get("index_url") or INDEX_URL
     html = fetch_html(index_url)
+    html_links = _extract_html_links(html)
     posts = _extract_state_posts(html)
     if posts:
         items = []
@@ -129,6 +151,11 @@ def build_items(feed: dict, parser: dict) -> List[dict]:
             published_at = _parse_published_at(post.get("publishedAt"))
             if not url:
                 continue
+            if slug and "/news/" in url and re.search(r"/news/20\\d{2}/\\d{1,2}/", html_links.get(slug, "")):
+                url = html_links[slug]
+            elif slug and "/news/" in url and re.search(r"/news/20\\d{2}/\\d{1,2}/", url) is None:
+                if slug in html_links:
+                    url = html_links[slug]
             items.append(
                 (
                     published_at or now,
