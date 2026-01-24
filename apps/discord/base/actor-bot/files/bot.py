@@ -181,6 +181,18 @@ def _truncate_block(text: str, limit: int) -> str:
     return f"{text[: max(0, limit - 1)].rstrip()}…"
 
 
+def _resolve_role_mentions(message: discord.Message, content: str) -> str:
+    if not content:
+        return ""
+    resolved = content
+    for role in message.role_mentions:
+        resolved = resolved.replace(
+            f"<@&{role.id}>",
+            f"<Role mentioned: {role.name}>",
+        )
+    return resolved
+
+
 def _chunk_text(text: str, limit: int) -> List[str]:
     chunks = []
     remaining = text
@@ -607,8 +619,9 @@ async def _generate_emoji_reactions(
     message: discord.Message,
 ) -> List[str]:
     prompt = _build_emoji_system_prompt(emoji_context)
+    resolved_content = _resolve_role_mentions(message, message.content or "")
     user_content = (
-        f"Message from {message.author.display_name}:\n{message.content or ''}"
+        f"Message from {message.author.display_name}:\n{resolved_content}"
     )
     messages = [
         {"role": "system", "content": prompt},
@@ -743,9 +756,7 @@ async def _load_reply_chain(
     chain.reverse()
     messages: List[Dict[str, str]] = []
     for item in chain:
-        if item.author.bot:
-            continue
-        content = (item.content or "").strip()
+        content = _resolve_role_mentions(item, (item.content or "").strip())
         if not content:
             continue
         line = f"{item.author.display_name}: {content}"
@@ -774,7 +785,10 @@ async def _load_background_context(
             before=message.created_at,
             oldest_first=True,
         ):
-            content = _compact_text(item.content or "", BACKGROUND_MAX_CHARS)
+            content = _compact_text(
+                _resolve_role_mentions(item, item.content or ""),
+                BACKGROUND_MAX_CHARS,
+            )
             if not content:
                 continue
             line = f"[background] {item.author.display_name}: {content}"
@@ -1113,7 +1127,8 @@ async def on_message(message: discord.Message):
         if not actor:
             continue
         handled = True
-        _store_message(actor["id"], message.author, message.content)
+        resolved_content = _resolve_role_mentions(message, message.content or "")
+        _store_message(actor["id"], message.author, resolved_content)
         _compact_history(actor["id"])
         system_prompt = _build_system_prompt(
             actor["context"],
