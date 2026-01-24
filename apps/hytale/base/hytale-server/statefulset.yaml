@@ -27,7 +27,7 @@ spec:
           tolerationSeconds: 300
       containers:
       - name: hytale-server
-        image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
+        image: registry:5000/hytale-server:experimental-0.1.4-2026.01.24-6e2d4fc36
         imagePullPolicy: Always
         tty: true
         stdin: true
@@ -84,7 +84,7 @@ spec:
             type: RuntimeDefault
       initContainers:
       - name: seed-hytale-data
-        image: registry:5000/hytale-server:experimental-0.1.4-2026.01.17-4b0f30090
+        image: registry:5000/hytale-server:experimental-0.1.4-2026.01.24-6e2d4fc36
         imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
         args:
