@@ -1120,7 +1120,7 @@ async def on_message(message: discord.Message):
                         if word and word in content:
                             actor_ids.append(actor["id"])
                             break
-    if not actor_ids:
+    if not actor_ids and not emoji_actor_ids:
         return
 
     handled = False
