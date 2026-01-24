@@ -1080,7 +1080,8 @@ async def on_ready():
 
 @discord_client.event
 async def on_message(message: discord.Message):
-    if message.author.bot:
+    author_is_bot = message.author.bot
+    if author_is_bot and (message.webhook_id or message.author.id == discord_client.user.id):
         return
     emoji_actor_ids: List[int] = []
     content = (message.content or "").lower()
@@ -1130,6 +1131,8 @@ async def on_message(message: discord.Message):
         resolved_content = _resolve_role_mentions(message, message.content or "")
         _store_message(actor["id"], message.author, resolved_content)
         _compact_history(actor["id"])
+        if author_is_bot:
+            continue
         system_prompt = _build_system_prompt(
             actor["context"],
             actor["extended_context"],
@@ -1249,7 +1252,7 @@ async def on_message(message: discord.Message):
             reply_msg = await message.reply("Error: request failed.")
             _store_response_link(actor["id"], reply_msg.id)
 
-    if emoji_actor_ids:
+    if not author_is_bot and emoji_actor_ids:
         seen_emoji_actors = set()
         for actor_id in emoji_actor_ids:
             if actor_id in seen_emoji_actors:
