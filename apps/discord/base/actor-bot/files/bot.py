@@ -609,9 +609,35 @@ def _parse_emoji_reactions(payload: str) -> List[str]:
             continue
         emoji = item.get("emoji")
         if isinstance(emoji, str) and emoji.strip():
-            emojis.append(emoji.strip())
+            for chunk in _split_emoji_string(emoji.strip()):
+                emojis.append(chunk)
+                if len(emojis) >= MAX_EMOJI_REACTIONS:
+                    break
         if len(emojis) >= MAX_EMOJI_REACTIONS:
             break
+    return emojis
+
+
+def _split_emoji_string(text: str) -> List[str]:
+    if not text:
+        return []
+    emojis: List[str] = []
+    i = 0
+    length = len(text)
+    while i < length:
+        if text[i] == "<":
+            end = text.find(">", i + 1)
+            if end != -1:
+                candidate = text[i : end + 1]
+                if candidate.startswith("<:") or candidate.startswith("<a:"):
+                    emojis.append(candidate)
+                    i = end + 1
+                    continue
+        if text[i].isspace():
+            i += 1
+            continue
+        emojis.append(text[i])
+        i += 1
     return emojis
 
 
