@@ -90,18 +90,17 @@ spec:
         args:
           - |
             set -e
-            SRC_DIR="/home/container/game"
-            DEST_DIR="/mnt/data/game"
-            mkdir -p /mnt/data/game
-            if [ ! -f "$SRC_DIR/Assets.zip" ] && [ -f "/home/container/Assets.zip" ]; then
-              SRC_DIR="/home/container"
-              DEST_DIR="/mnt/data"
+            SRC_DIR="/home/container"
+            DEST_DIR="/mnt/data"
+            if [ ! -f "$SRC_DIR/Assets.zip" ] && [ -f "/home/container/game/Assets.zip" ]; then
+              SRC_DIR="/home/container/game"
+              DEST_DIR="/mnt/data/game"
             fi
+            mkdir -p "$DEST_DIR"
             if [ ! -f "$SRC_DIR/Assets.zip" ] || { [ ! -f "$SRC_DIR/HytaleServer.jar" ] && [ ! -f "$SRC_DIR/Server" ]; }; then
               echo "Missing bundled server files in image ($SRC_DIR)." >&2
               exit 1
             fi
-            mkdir -p "$DEST_DIR"
             cp -f "$SRC_DIR/Assets.zip" "$DEST_DIR/"
             if [ -f "$SRC_DIR/HytaleServer.jar" ]; then
               cp -f "$SRC_DIR/HytaleServer.jar" "$DEST_DIR/"
