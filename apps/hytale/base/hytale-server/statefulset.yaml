@@ -56,10 +56,10 @@ spec:
           subPath: machine-id
         resources:
           requests:
-            memory: "32Gi"
+            memory: "16Gi"
             cpu: "8"
           limits:
-            memory: "32Gi"
+            memory: "16Gi"
             cpu: "16"
         livenessProbe:
           exec:
