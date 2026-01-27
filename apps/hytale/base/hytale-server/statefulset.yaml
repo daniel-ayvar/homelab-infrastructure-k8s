@@ -56,11 +56,11 @@ spec:
           subPath: machine-id
         resources:
           requests:
-            memory: "16Gi"
-            cpu: "8"
+            memory: "12Gi"
+            cpu: "5"
           limits:
             memory: "16Gi"
-            cpu: "16"
+            cpu: "8"
         livenessProbe:
           exec:
             command: ["/bin/sh", "-c", "pgrep -f 'java.*HytaleServer' >/dev/null 2>&1"]
