@@ -41,6 +41,8 @@ spec:
           value: "0.0.0.0"
         - name: SERVER_PORT
           value: "5520"
+        - name: JAVA_TOOL_OPTIONS
+          value: "-Xms4G -Xmx12G"
         - name: PROD
           value: "FALSE"
         - name: DEBUG
@@ -54,11 +56,11 @@ spec:
           subPath: machine-id
         resources:
           requests:
-            memory: "8Gi"
-            cpu: "2"
+            memory: "32Gi"
+            cpu: "8"
           limits:
-            memory: "8Gi"
-            cpu: "4"
+            memory: "32Gi"
+            cpu: "16"
         livenessProbe:
           exec:
             command: ["/bin/sh", "-c", "pgrep -f 'java.*HytaleServer' >/dev/null 2>&1"]
