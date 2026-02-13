@@ -586,14 +586,20 @@ def _compact_history(actor_id: int):
         )
 
 
-def _emoji_trigger_match(content: str, trigger_words: Optional[str]) -> bool:
+def _word_trigger_match(content: str, trigger_words: Optional[str]) -> bool:
     if not content or not trigger_words:
         return False
-    lowered = content.lower()
-    for word in trigger_words.strip().lower().split():
-        if word and word in lowered:
+    for word in trigger_words.strip().split():
+        if not word:
+            continue
+        pattern = rf"(?<!\w){re.escape(word)}(?!\w)"
+        if re.search(pattern, content, flags=re.IGNORECASE):
             return True
     return False
+
+
+def _emoji_trigger_match(content: str, trigger_words: Optional[str]) -> bool:
+    return _word_trigger_match(content, trigger_words)
 
 
 def _parse_emoji_reactions(payload: str) -> List[str]:
@@ -1115,7 +1121,7 @@ async def on_message(message: discord.Message):
     if author_is_bot and (message.webhook_id or message.author.id == discord_client.user.id):
         return
     emoji_actor_ids: List[int] = []
-    content = (message.content or "").lower()
+    content = message.content or ""
     if content:
         for actor in _fetch_actors():
             if _emoji_trigger_match(content, actor["emoji_trigger_words"]):
@@ -1139,13 +1145,9 @@ async def on_message(message: discord.Message):
         else:
             if content:
                 for actor in _fetch_actors():
-                    trigger_words = (actor["trigger_words"] or "").strip().lower()
-                    if not trigger_words:
-                        continue
-                    for word in trigger_words.split():
-                        if word and word in content:
-                            actor_ids.append(actor["id"])
-                            break
+                    trigger_words = (actor["trigger_words"] or "").strip()
+                    if _word_trigger_match(content, trigger_words):
+                        actor_ids.append(actor["id"])
     if not actor_ids and not emoji_actor_ids:
         return
 
