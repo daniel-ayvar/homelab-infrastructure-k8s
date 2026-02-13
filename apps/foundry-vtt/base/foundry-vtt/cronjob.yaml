@@ -4,8 +4,14 @@ metadata:
   name: foundry-vtt-backup-cronjob
 spec:
   schedule: "0 8 * * *"  # 3 AM CDT = 8 AM UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 86400
+      backoffLimit: 1
       template:
         spec:
           serviceAccountName: foundry-vtt-backup-sa
