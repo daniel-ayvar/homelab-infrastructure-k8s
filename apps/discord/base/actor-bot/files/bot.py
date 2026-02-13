@@ -805,6 +805,7 @@ def _load_saved_context(
     actor_id: int,
     token_budget: int,
     seen: set,
+    exclude_line: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     cutoff = _utc_now() - timedelta(seconds=MAX_HISTORY_AGE_SECONDS)
     with _connect_db() as conn:
@@ -829,6 +830,8 @@ def _load_saved_context(
             messages.append({"role": "system", "content": summary_line})
     for row in rows:
         line = f"{row['author_name']}: {row['content']}"
+        if exclude_line and line == exclude_line:
+            continue
         if line in seen:
             continue
         tokens = _approx_tokens(line)
@@ -1266,6 +1269,7 @@ async def on_message(message: discord.Message):
         _compact_history(actor["id"], provider)
         if author_is_bot:
             continue
+        latest_line = f"{message.author.display_name}: {(resolved_content or '').strip()}"
         system_prompt = _build_system_prompt(
             actor["context"],
             actor["extended_context"],
@@ -1285,7 +1289,12 @@ async def on_message(message: discord.Message):
         )
         saved_context = []
         if token_budget > 0:
-            saved_context = _load_saved_context(actor["id"], token_budget, seen)
+            saved_context = _load_saved_context(
+                actor["id"],
+                token_budget,
+                seen,
+                exclude_line=latest_line,
+            )
         if reply_context or saved_context:
             messages.append(
                 {"role": "system", "content": "Prior messages (oldest to newest):"}
@@ -1300,6 +1309,17 @@ async def on_message(message: discord.Message):
                 }
             )
             messages.extend(background_context)
+        # Keep the latest user input as the final turn so responses do not anchor to older context.
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Reply to the latest user message below. "
+                    "Use prior context only as supporting background."
+                ),
+            }
+        )
+        messages.append({"role": "user", "content": latest_line})
         try:
             response, error = await asyncio.to_thread(_chat, messages, provider)
             if error == "insufficient_quota":
