@@ -31,8 +31,13 @@ spec:
             secretKeyRef:
               name: actor-bot
               key: openai_api_key
-        - name: OPENAI_MODEL
-          value: gpt-4o-mini
+        - name: GROK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: actor-bot-grok
+              key: grok_api_key
+        - name: DEFAULT_LLM_PROVIDER
+          value: openai
         - name: ACTOR_MANAGER_ROLE
           value: Actor Manager
         - name: DISCORD_GUILD_ID

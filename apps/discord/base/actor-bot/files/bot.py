@@ -2,10 +2,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import discord
 import requests
@@ -19,7 +21,11 @@ logger = logging.getLogger("actor-bot")
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+GROK_API_KEY = os.getenv("GROK_API_KEY")
+OPENAI_MODEL = "gpt-4o-mini"
+GROK_MODEL = "grok-3-mini"
+DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "openai").strip().lower()
+ALLOWED_LLM_PROVIDERS = {"openai", "grok"}
 ACTOR_MANAGER_ROLE = os.getenv("ACTOR_MANAGER_ROLE", "Actor Manager")
 ACTOR_WEBHOOK_NAME = os.getenv("ACTOR_WEBHOOK_NAME", "actor-bot")
 DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")
@@ -38,8 +44,12 @@ BACKGROUND_MAX_CHARS = int(os.getenv("BACKGROUND_MAX_CHARS", "240"))
 MAX_EMOJI_REACTIONS = int(os.getenv("MAX_EMOJI_REACTIONS", "3"))
 DB_PATH = os.getenv("ACTOR_DB_PATH", "/data/actors.db")
 
-if not DISCORD_TOKEN or not OPENAI_API_KEY:
-    raise RuntimeError("Missing required DISCORD_TOKEN or OPENAI_API_KEY")
+if DEFAULT_LLM_PROVIDER not in ALLOWED_LLM_PROVIDERS:
+    raise RuntimeError("DEFAULT_LLM_PROVIDER must be one of: openai, grok")
+if not DISCORD_TOKEN:
+    raise RuntimeError("Missing required DISCORD_TOKEN")
+if not OPENAI_API_KEY and not GROK_API_KEY:
+    raise RuntimeError("Missing required OPENAI_API_KEY or GROK_API_KEY")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -73,6 +83,7 @@ def _init_db():
                 extended_context TEXT,
                 emoji_trigger_words TEXT,
                 emoji_context TEXT,
+                llm_provider TEXT,
                 creator_id TEXT,
                 summary TEXT,
                 summary_updated_at TEXT,
@@ -141,12 +152,22 @@ def _init_db():
             conn.execute("ALTER TABLE actors ADD COLUMN emoji_trigger_words TEXT")
         if "emoji_context" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN emoji_context TEXT")
+        if "llm_provider" not in columns:
+            conn.execute("ALTER TABLE actors ADD COLUMN llm_provider TEXT")
         if "creator_id" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN creator_id TEXT")
         if "summary" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN summary TEXT")
         if "summary_updated_at" not in columns:
             conn.execute("ALTER TABLE actors ADD COLUMN summary_updated_at TEXT")
+        conn.execute(
+            """
+            UPDATE actors
+            SET llm_provider = ?
+            WHERE llm_provider IS NULL OR llm_provider = ''
+            """,
+            (DEFAULT_LLM_PROVIDER,),
+        )
         conn.execute(
             """
             UPDATE actors
@@ -205,6 +226,8 @@ def _chunk_text(text: str, limit: int) -> List[str]:
 
 
 def _openai_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
+    if not OPENAI_API_KEY:
+        return "", "provider_not_configured"
     payload = {
         "model": OPENAI_MODEL,
         "messages": messages,
@@ -241,7 +264,46 @@ def _openai_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
     return data["choices"][0]["message"]["content"].strip(), None
 
 
-def _openai_summary(prompt: str) -> Tuple[str, Optional[str]]:
+def _grok_chat(messages: List[Dict[str, str]]) -> Tuple[str, Optional[str]]:
+    if not GROK_API_KEY:
+        return "", "provider_not_configured"
+    payload = {
+        "model": GROK_MODEL,
+        "messages": messages,
+        "temperature": 0.7,
+    }
+    resp = requests.post(
+        "https://api.x.ai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {GROK_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        data=json.dumps(payload),
+        timeout=45,
+    )
+    if not resp.ok:
+        logger.error(
+            "grok error status=%s body=%s",
+            resp.status_code,
+            resp.text[:2000],
+        )
+        if resp.status_code == 429:
+            return "", "insufficient_quota"
+        resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip(), None
+
+
+def _chat(messages: List[Dict[str, str]], provider: Optional[str]) -> Tuple[str, Optional[str]]:
+    selected = (provider or DEFAULT_LLM_PROVIDER).strip().lower()
+    if selected not in ALLOWED_LLM_PROVIDERS:
+        selected = DEFAULT_LLM_PROVIDER
+    if selected == "grok":
+        return _grok_chat(messages)
+    return _openai_chat(messages)
+
+
+def _summary(prompt: str, provider: Optional[str]) -> Tuple[str, Optional[str]]:
     messages = [
         {
             "role": "system",
@@ -253,7 +315,7 @@ def _openai_summary(prompt: str) -> Tuple[str, Optional[str]]:
         },
         {"role": "user", "content": prompt},
     ]
-    return _openai_chat(messages)
+    return _chat(messages, provider)
 
 
 def _build_system_prompt(context: str, extended_context: Optional[str]) -> str:
@@ -301,7 +363,7 @@ async def _get_or_create_actor_role(guild: discord.Guild, name: str) -> discord.
 
 
 async def _store_actor(name: str, role_id: str, context: str) -> Tuple[bool, str]:
-    return await _store_actor_full(name, role_id, context, None, None, None, None, None)
+    return await _store_actor_full(name, role_id, context, None, None, None, None, None, None)
 
 
 async def _store_actor_full(
@@ -312,8 +374,12 @@ async def _store_actor_full(
     extended_context: Optional[str],
     emoji_trigger_words: Optional[str],
     emoji_context: Optional[str],
+    llm_provider: Optional[str],
     creator_id: Optional[str],
 ) -> Tuple[bool, str]:
+    selected_provider = (llm_provider or DEFAULT_LLM_PROVIDER).strip().lower()
+    if selected_provider not in ALLOWED_LLM_PROVIDERS:
+        return False, "Invalid provider. Use openai or grok."
     async with db_lock:
         with _connect_db() as conn:
             existing = conn.execute(
@@ -334,11 +400,12 @@ async def _store_actor_full(
                     extended_context,
                     emoji_trigger_words,
                     emoji_context,
+                    llm_provider,
                     creator_id,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
@@ -349,6 +416,7 @@ async def _store_actor_full(
                     extended_context,
                     emoji_trigger_words,
                     emoji_context,
+                    selected_provider,
                     creator_id,
                     now,
                     now,
@@ -365,6 +433,7 @@ async def _update_actor_context(
     extended_context: Optional[str] = None,
     emoji_trigger_words: Optional[str] = None,
     emoji_context: Optional[str] = None,
+    llm_provider: Optional[str] = None,
 ) -> Tuple[bool, str]:
     async with db_lock:
         with _connect_db() as conn:
@@ -394,6 +463,12 @@ async def _update_actor_context(
             if emoji_context is not None:
                 updates.append("emoji_context = ?")
                 values.append(emoji_context)
+            if llm_provider is not None:
+                selected_provider = llm_provider.strip().lower()
+                if selected_provider not in ALLOWED_LLM_PROVIDERS:
+                    return False, "Invalid provider. Use openai or grok."
+                updates.append("llm_provider = ?")
+                values.append(selected_provider)
             if len(updates) == 1:
                 return False, "No updates provided."
             values.append(name)
@@ -545,7 +620,7 @@ def _update_actor_summary(actor_id: int, summary: str):
         )
 
 
-def _compact_history(actor_id: int):
+def _compact_history(actor_id: int, provider: Optional[str]):
     with _connect_db() as conn:
         count_row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM messages WHERE actor_id = ?",
@@ -571,7 +646,7 @@ def _compact_history(actor_id: int):
     if existing:
         prompt += f"Existing summary:\n{existing}\n\n"
     prompt += "New conversation lines:\n" + "\n".join(lines)
-    summary, error = _openai_summary(prompt)
+    summary, error = _summary(prompt, provider)
     if error:
         logger.warning("summary update skipped error=%s", error)
         return
@@ -648,6 +723,7 @@ def _split_emoji_string(text: str) -> List[str]:
 
 
 async def _generate_emoji_reactions(
+    provider: Optional[str],
     emoji_context: str,
     message: discord.Message,
 ) -> List[str]:
@@ -660,8 +736,8 @@ async def _generate_emoji_reactions(
         {"role": "system", "content": prompt},
         {"role": "user", "content": user_content},
     ]
-    response, error = await asyncio.to_thread(_openai_chat, messages)
-    if error == "insufficient_quota":
+    response, error = await asyncio.to_thread(_chat, messages, provider)
+    if error in {"insufficient_quota", "provider_not_configured"}:
         return []
     return _parse_emoji_reactions(response)
 
@@ -859,9 +935,16 @@ async def _get_root_message(message: discord.Message) -> discord.Message:
 
 
 @tree.command(name="actor-register", description="Register a new actor.")
+@app_commands.choices(
+    llm_provider=[
+        app_commands.Choice(name="OpenAI", value="openai"),
+        app_commands.Choice(name="Grok", value="grok"),
+    ]
+)
 @app_commands.describe(
     name="Actor name (mentionable)",
     context="Actor context block",
+    llm_provider="AI provider: openai or grok.",
     trigger_words="Optional trigger words (space-separated).",
     extended_context="Optional extended context block.",
     emoji_trigger_words="Optional emoji trigger words (space-separated).",
@@ -873,6 +956,7 @@ async def actor_register(
     interaction: discord.Interaction,
     name: str,
     context: str,
+    llm_provider: Optional[app_commands.Choice[str]] = None,
     trigger_words: Optional[str] = None,
     extended_context: Optional[str] = None,
     emoji_trigger_words: Optional[str] = None,
@@ -900,6 +984,7 @@ async def actor_register(
         extended_context,
         emoji_trigger_words,
         emoji_context,
+        llm_provider.value if llm_provider else None,
         str(interaction.user.id),
     )
     if ok and resolved_avatar:
@@ -911,14 +996,22 @@ async def actor_register(
             extended_context=extended_context,
             emoji_trigger_words=emoji_trigger_words,
             emoji_context=emoji_context,
+            llm_provider=llm_provider.value if llm_provider else None,
         )
     await interaction.response.send_message(message, ephemeral=True)
 
 
 @tree.command(name="actor-update", description="Update an actor context.")
+@app_commands.choices(
+    llm_provider=[
+        app_commands.Choice(name="OpenAI", value="openai"),
+        app_commands.Choice(name="Grok", value="grok"),
+    ]
+)
 @app_commands.describe(
     name="Actor name",
     context="New context block",
+    llm_provider="AI provider: openai or grok.",
     trigger_words="Optional trigger words (space-separated).",
     extended_context="Optional extended context block.",
     emoji_trigger_words="Optional emoji trigger words (space-separated).",
@@ -930,6 +1023,7 @@ async def actor_update(
     interaction: discord.Interaction,
     name: str,
     context: Optional[str] = None,
+    llm_provider: Optional[app_commands.Choice[str]] = None,
     trigger_words: Optional[str] = None,
     extended_context: Optional[str] = None,
     emoji_trigger_words: Optional[str] = None,
@@ -959,6 +1053,7 @@ async def actor_update(
         extended_context=extended_context,
         emoji_trigger_words=emoji_trigger_words,
         emoji_context=emoji_context,
+        llm_provider=llm_provider.value if llm_provider else None,
     )
     await interaction.response.send_message(message, ephemeral=True)
 
@@ -1025,6 +1120,7 @@ async def actor_list(interaction: discord.Interaction):
                 [
                     f"**{actor['name']}**",
                     f"role {role_mention}",
+                    f"provider {actor['llm_provider'] or DEFAULT_LLM_PROVIDER}",
                     f"avatar {actor['avatar_url'] or 'none'}",
                 ]
             )
@@ -1063,6 +1159,7 @@ async def _send_actor_info(interaction: discord.Interaction, name: str):
             f"**Name:** {actor['name']}",
             f"**Role:** {role_mention}",
             f"**Avatar:** {actor['avatar_url'] or 'none'}",
+            f"**Provider:** {actor['llm_provider'] or DEFAULT_LLM_PROVIDER}",
             f"**Trigger words:** {actor['trigger_words'] or 'none'}",
             f"**Emoji trigger words:** {actor['emoji_trigger_words'] or 'none'}",
             f"**Creator:** {creator_mention}",
@@ -1163,7 +1260,8 @@ async def on_message(message: discord.Message):
         handled = True
         resolved_content = _resolve_role_mentions(message, message.content or "")
         _store_message(actor["id"], message.author, resolved_content)
-        _compact_history(actor["id"])
+        provider = actor["llm_provider"] or DEFAULT_LLM_PROVIDER
+        _compact_history(actor["id"], provider)
         if author_is_bot:
             continue
         system_prompt = _build_system_prompt(
@@ -1201,9 +1299,12 @@ async def on_message(message: discord.Message):
             )
             messages.extend(background_context)
         try:
-            response, error = await asyncio.to_thread(_openai_chat, messages)
+            response, error = await asyncio.to_thread(_chat, messages, provider)
             if error == "insufficient_quota":
                 await message.reply("Error: AI quota is exhausted.")
+                continue
+            if error == "provider_not_configured":
+                await message.reply(f"Error: AI provider '{provider}' is not configured.")
                 continue
             actor_name = actor["name"]
             avatar_url = actor["avatar_url"]
@@ -1276,7 +1377,8 @@ async def on_message(message: discord.Message):
                     _store_response_link(actor["id"], reply_msg.id)
         except Exception:
             logger.exception(
-                "openai request failed actor=%s channel=%s thread=%s author=%s",
+                "llm request failed provider=%s actor=%s channel=%s thread=%s author=%s",
+                provider,
                 actor["name"],
                 parent_channel.id,
                 "none",
@@ -1298,7 +1400,8 @@ async def on_message(message: discord.Message):
             if not emoji_context:
                 continue
             try:
-                emojis = await _generate_emoji_reactions(emoji_context, message)
+                provider = actor["llm_provider"] or DEFAULT_LLM_PROVIDER
+                emojis = await _generate_emoji_reactions(provider, emoji_context, message)
                 if emojis:
                     await _apply_emoji_reactions(message, emojis)
             except Exception:
@@ -1319,4 +1422,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-from urllib.parse import urlparse

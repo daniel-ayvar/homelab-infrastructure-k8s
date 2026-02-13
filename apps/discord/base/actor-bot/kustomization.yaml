@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - externalsecret.yaml
+  - externalsecret-grok.yaml
   - serviceaccount.yaml
   - pvc.yaml
 
