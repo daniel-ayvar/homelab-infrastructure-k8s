@@ -1204,7 +1204,9 @@ async def on_ready():
             logger.exception("failed ensuring manager role for guild=%s", guild.id)
     try:
         if DISCORD_GUILD_ID:
-            await tree.sync(guild=discord.Object(id=int(DISCORD_GUILD_ID)))
+            guild_obj = discord.Object(id=int(DISCORD_GUILD_ID))
+            tree.copy_global_to(guild=guild_obj)
+            await tree.sync(guild=guild_obj)
             logger.info("synced commands to guild=%s", DISCORD_GUILD_ID)
         else:
             await tree.sync()
